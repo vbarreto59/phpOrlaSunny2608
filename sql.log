@@ -1,0 +1,18 @@
+[2026-02-09 14:56:30] [IP: ::1] [UserID: 197] SQL: UPDATE usuarios 
+                    SET DiretoriaID = :diretorid, 
+                        Diretoria = :diretoria,
+                        GerenciaID = :gerenciaid, 
+                        Gerencia = :gerencia 
+                    WHERE UserID = :userid 
+                    AND IdEmp = 2 | Params: {"DiretoriaID":2,"Diretoria":"VERAS","GerenciaID":16,"Gerencia":"RAIZES","UserID":197}
+
+[2026-02-10 14:15:21] [IP: ::1] [UserID: 43] SQL: UPDATE usuarios 
+                    SET DiretoriaID = :diretorid, 
+                        Diretoria = :diretoria,
+                        GerenciaID = :gerenciaid, 
+                        Gerencia = :gerencia 
+                    WHERE UserID = :userid 
+                    AND IdEmp = 2 | Params: {"DiretoriaID":1,"Diretoria":"VILARIM","GerenciaID":17,"Gerencia":"ATLANTIS","UserID":43}
+
+[2026-02-10 16:20:33] SQL: USUÁRIO EXCLUÍDO | Params: {"UserID":207}
+[2026-02-10 16:20:41] SQL: USUÁRIO EXCLUÍDO | Params: {"UserID":205}
