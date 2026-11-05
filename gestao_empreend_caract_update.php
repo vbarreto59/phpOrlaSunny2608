@@ -304,7 +304,7 @@ $maiorPrecoExibicao = formatarMoedaExibicao($empreendimento['MaiorPreco']);
             <div class="container">
                 <div class="d-flex flex-column flex-md-row justify-content-between align-items-center">
                     <div class="mb-2 mb-md-0 d-flex align-items-center">
-                        <img src="img/logotocca.jpg" alt="Logotipo Tocca" style="height: 50px; margin-right: 15px;">
+                        <img src="img/logosunny.jpg" alt="Logotipo Tocca" style="height: 50px; margin-right: 15px;">
                         <div>
                             <h1 class="mb-0 fs-4">
                                 <i class="fas fa-building me-2"></i> Empreendimentos Características

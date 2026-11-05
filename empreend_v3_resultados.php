@@ -482,21 +482,19 @@ try {
                                         ?>
                                         <tr>
                                             <td>
-                                                <?php 
-                                                $imagem_path = "card/" . $empreend['Empreend_ID'] . ".jpg";
-                                                if (file_exists($imagem_path)): 
-                                                ?>
-                                                <img src="<?= $imagem_path ?>" 
-                                                     class="img-fluid rounded mb-2" 
-                                                     style="max-height: 200px; width: auto; cursor: pointer; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color);"
-                                                     onclick="openImageModal(this)"
-                                                     alt="<?= htmlspecialchars($empreend['NomeEmpreendimento']) ?>">
-                                                <?php else: ?>
-                                                <div class="bg-light rounded mb-2 d-flex align-items-center justify-content-center" 
-                                                     style="height: 200px; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color);">
-                                                    <i class="fas fa-image fa-3x text-muted"></i>
-                                                </div>
-                                                <?php endif; ?>
+                                                <!--  -->
+<?php 
+$imagem_path   = "card/" . $empreend['Empreend_ID'] . ".jpg";
+$imagem_generica = "card/sem-imagem.jpg"; // ajuste o caminho se necessário
+$imagem_final  = file_exists($imagem_path) ? $imagem_path : $imagem_generica;
+?>
+<img src="<?= htmlspecialchars($imagem_final) ?>" 
+     class="img-fluid rounded mb-2" 
+     style="max-height: 200px; width: auto; cursor: pointer; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color); object-fit: cover;"
+     onclick="openImageModal(this)"
+     onerror="this.onerror=null; this.src='<?= htmlspecialchars($imagem_generica) ?>';"
+     alt="<?= htmlspecialchars($empreend['NomeEmpreendimento']) ?>">
+                                                <!--  -->
                                                 
                                                 <div class='mt-2'>
                                                     <h5><?= htmlspecialchars(strtoupper(removeNumeros($empreend['NomeEmpreendimento']))) ?></h5>
@@ -661,3 +659,4 @@ try {
     </script>
 </body>
 </html>
+<!--  -->

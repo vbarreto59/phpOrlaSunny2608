@@ -89,12 +89,29 @@ $temas = [
         'badge_bg' => '#dc2626',
         'badge_text' => '#ffffff',
     ],
+    'bege_marrom' => [
+        'nome' => 'Bege e Marrom',
+        'primary' => '#8d6e63',      // Marrom claro/médio principal
+        'primary_dark' => '#5d4037', // Marrom mais escuro
+        'secondary' => '#d7ccc8',    // Bege escuro / acinzentado suave
+        'accent' => '#795548',       // Tom de destaque em marrom
+        'bg_body' => '#fdfbf7',      // Fundo em bege bem clarinho/suave
+        'text_color' => '#3e2723',   // Texto em marrom bem escuro (boa legibilidade)
+        'card_bg' => '#ffffff',
+        'header_bg' => '#ffffff',
+        'btn_bg' => '#8d6e63',
+        'btn_hover' => '#5d4037',
+        'btn_text' => '#ffffff',
+        'shadow_color' => '#3e2723',
+        'badge_bg' => '#8d6e63',
+        'badge_text' => '#ffffff',
+    ],
 ];
 
 // ============================================================
 // ESCOLHA O TEMA ATIVO AQUI (altere o índice para o desejado)
 // ============================================================
-$tema_ativo = 'verde'; // opções: laranja, azul, verde, roxo, vermelho
+$tema_ativo = 'bege_marrom'; // opções: laranja, azul, verde, roxo, vermelho, bege_marrom
 
 // Carrega as cores do tema escolhido
 if (isset($temas[$tema_ativo])) {

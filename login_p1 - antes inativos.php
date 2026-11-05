@@ -620,7 +620,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         <div class="login-body">
             <div class="logo-container floating">
-                <img src="img/logotocca.jpg" alt="Logo da Empresa" class="logo-animado">
+                <img src="img/logosunny.jpg" alt="Logo da Empresa" class="logo-animado">
             </div>
             
             <button class="btn-login" onclick="abrirModal()">

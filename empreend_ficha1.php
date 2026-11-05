@@ -272,7 +272,7 @@ function formatCurrency($valor) {
     <div class="container">
         <div class="ficha-container" id="fichaParaPDF">
             <div class="ficha-header">
-                <h2><img src="<?php echo isset($_SESSION['Conf_ImgLogo']) ? htmlspecialchars($_SESSION['Conf_ImgLogo']) : ''; ?>" width="200" height="60" alt="LogoTocca"></h2>
+                <h2><img src="<?php echo isset($_SESSION['Conf_ImgLogo']) ? htmlspecialchars($_SESSION['Conf_ImgLogo']) : ''; ?>" width="200" height="60" alt="LogoSunny"></h2>
                 <h3><i class="fas fa-building"></i> FICHA DO EMPREENDIMENTO</h3>
                 <h4><?php echo htmlspecialchars(strtoupper(removerNumeros($empreendimento['NomeEmpreendimento']))); ?></h4>
             </div>

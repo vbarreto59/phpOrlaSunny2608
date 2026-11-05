@@ -64,7 +64,7 @@
     <div class="card shadow-lg">
         <!-- Logo no topo -->
         <div class="logo-container">
-            <img src="img/logotocca.jpg" alt="Logo SunnyImob" class="logo-error">
+            <img src="img/logosunny.jpg" alt="Logo SunnyImob" class="logo-error">
         </div>
 
         <div class="card-header">

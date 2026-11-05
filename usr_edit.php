@@ -1,27 +1,59 @@
 <?php
-session_start();
-require_once 'conn.php';
+// ============================================================
+// session_start PRIMEIRO
+// ============================================================
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-// Proteção CSRF
+require_once 'conn.php';
+require_once 'theme_config.php';
+
+// ============================================================
+// CONEXÃO
+// ============================================================
+if (isset($conn) && $conn instanceof PDO)      $db = $conn;
+elseif (isset($pdo) && $pdo instanceof PDO)    $db = $pdo;
+else die("Erro: conexão com o banco não encontrada.");
+
+// ============================================================
+// TEMA SEGURO
+// ============================================================
+$themeDefaults = [
+    'primary' => '#800020', 'primary_dark' => '#4B0C1D',
+    'secondary' => '#6c757d', 'accent' => '#ffc107',
+    'bg_body' => '#f0f2f5', 'text_color' => '#1a1a2e',
+    'card_bg' => '#ffffff', 'shadow_color' => '#1a1a2e',
+    'btn_bg' => '#800020', 'btn_hover' => '#4B0C1D', 'btn_text' => '#ffffff',
+];
+$themeSafe = array_merge($themeDefaults, isset($theme) && is_array($theme) ? $theme : []);
+
+// ============================================================
+// CSRF
+// ============================================================
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-// Função auxiliar de permissões
+// ============================================================
+// FUNÇÕES
+// ============================================================
 function getPermissaoInfo($codigo) {
     $map = [
-        1 => ['nome' => 'SUPERADMIN',    'acoes' => '/GESTAO/SISTEMA/USUARIOS/BACKUP/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/', 'cor' => 'danger'],
-        2 => ['nome' => 'ADMIN',         'acoes' => '/USUARIOS/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/',                 'cor' => 'warning'],
-        3 => ['nome' => 'GESTOR-EDITOR', 'acoes' => '/GESTOR/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/',                 'cor' => 'info'],
-        4 => ['nome' => 'EDITOR',        'acoes' => '/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/',                        'cor' => 'primary'],
-        5 => ['nome' => 'CORRETOR',      'acoes' => '/CONSULTAR/',                                              'cor' => 'secondary'],
-        6 => ['nome' => 'CORRETOR-EDITOR','acoes' => '/CONSULTAR/EDITAR/',                                     'cor' => 'purple'],
-        7 => ['nome' => 'VISUALIZADOR',  'acoes' => '/CONSULTAR/',                                              'cor' => 'success'],
+        1 => ['nome' => 'SUPERADMIN',    'acoes' => '/GESTAO/SISTEMA/USUARIOS/BACKUP/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/', 'cor' => 'danger',    'desc' => 'Acesso total ao sistema'],
+        2 => ['nome' => 'ADMIN',         'acoes' => '/USUARIOS/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/',                 'cor' => 'warning',   'desc' => 'Gestão de usuários'],
+        3 => ['nome' => 'GESTOR-EDITOR', 'acoes' => '/GESTOR/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/',                 'cor' => 'info',      'desc' => 'Gestor de equipe'],
+        4 => ['nome' => 'EDITOR',        'acoes' => '/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/',                        'cor' => 'primary',   'desc' => 'Edita todos os registros'],
+        5 => ['nome' => 'CORRETOR',      'acoes' => '/CONSULTAR/',                                              'cor' => 'secondary', 'desc' => 'Apenas consulta'],
+        6 => ['nome' => 'CORRETOR-EDITOR','acoes' => '/CONSULTAR/EDITAR/',                                     'cor' => 'purple',    'desc' => 'Consulta + edita próprios'],
+        7 => ['nome' => 'VISUALIZADOR',  'acoes' => '/CONSULTAR/',                                              'cor' => 'success',   'desc' => 'Somente leitura'],
     ];
-    return $map[$codigo] ?? ['nome' => '—', 'acoes' => '', 'cor' => 'light'];
+    return $map[$codigo] ?? ['nome' => '—', 'acoes' => '', 'cor' => 'light', 'desc' => ''];
 }
 
-// 1. Obtém e valida o ID do usuário
+// ============================================================
+// VALIDA ID
+// ============================================================
 $vUserId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?? 0;
 
 if ($vUserId <= 0) {
@@ -30,29 +62,14 @@ if ($vUserId <= 0) {
     exit();
 }
 
-// 2. Carrega os dados do usuário (colunas reais da tabela)
+// ============================================================
+// CARREGA USUÁRIO
+// ============================================================
 try {
-    $stmt = $conn->prepare("
-        SELECT 
-            UserId,
-            Usuario,
-            SenhaAtual,
-            Nome,
-            CRECI,
-            Email,
-            Telefones,
-            Acoes,
-            Permissao,
-            Funcao,
-            Ativo,
-            IdEmp,
-            Empresa,
-            GrupoId,
-            Grupo,
-            DataHoraCadastro,
-            UsuarioCadastro,
-            Opr,
-            Licenca
+    $stmt = $db->prepare("
+        SELECT UserId, Usuario, SenhaAtual, Nome, CRECI, Email, Telefones,
+               Acoes, Permissao, Funcao, Ativo, IdEmp, Empresa,
+               GrupoId, Grupo, DataHoraCadastro, UsuarioCadastro, Opr, Licenca
         FROM usuarios 
         WHERE UserId = ?
     ");
@@ -70,29 +87,35 @@ try {
     exit();
 }
 
-// 3. Dados para o formulário (prioriza POST em caso de erro)
+// form_data (prioriza POST em caso de erro) + normalização de chaves
 $form_data = $_SESSION['form_data'] ?? $userData;
 unset($_SESSION['form_data']);
+// normaliza ID do grupo (POST envia ID_Grupo; SELECT retorna GrupoId)
+if (isset($form_data['ID_Grupo']) && !isset($form_data['GrupoId'])) {
+    $form_data['GrupoId'] = (int)$form_data['ID_Grupo'];
+}
 
-// 4. Processamento do formulário
+// ============================================================
+// PROCESSAMENTO DO POST
+// ============================================================
 $erros = [];
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-        $erros[] = "Falha na verificação de segurança (CSRF).";
+        $erros[] = "Falha na verificação de segurança (CSRF). Recarregue a página.";
     } else {
-        $vUsuario    = trim($_POST['Usuario']    ?? '');
-        $vSenha      = trim($_POST['Senha']      ?? '');
-        $vNome       = trim($_POST['Nome']       ?? '');
-        $vCRECI      = trim($_POST['CRECI']      ?? '');
-        $vEmail      = trim($_POST['Email']      ?? '');
-        $vTelefones  = trim($_POST['Telefones']  ?? '');
-        $vIdEmp      = (int)($_POST['IdEmp']     ?? 0);
-        $vID_Grupo   = (int)($_POST['ID_Grupo']  ?? 0);
-        $vPermissao  = (int)($_POST['Permissao'] ?? 0);
-        $vAtivo      = isset($_POST['Ativo']) ? 1 : 0;
-        $vFuncao     = trim($_POST['Funcao']     ?? '');
-        $vAcoes      = trim($_POST['Acoes']      ?? '');
+        $vUsuario   = trim($_POST['Usuario']   ?? '');
+        $vSenha     = trim($_POST['Senha']     ?? '');
+        $vNome      = trim($_POST['Nome']      ?? '');
+        $vCRECI     = trim($_POST['CRECI']     ?? '');
+        $vEmail     = trim($_POST['Email']     ?? '');
+        $vTelefones = trim($_POST['Telefones'] ?? '');
+        $vIdEmp     = (int)($_POST['IdEmp']    ?? 0);
+        $vID_Grupo  = (int)($_POST['ID_Grupo'] ?? 0);
+        $vPermissao = (int)($_POST['Permissao'] ?? 0);
+        $vAtivo     = isset($_POST['Ativo']) ? 1 : 0;
+        $vFuncao    = trim($_POST['Funcao']    ?? '');
+        $vAcoes     = trim($_POST['Acoes']     ?? '');
 
         // Validações
         if (empty($vUsuario) || empty($vNome) || $vPermissao < 1 || $vPermissao > 7 ||
@@ -102,9 +125,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         $senhaSalvar = !empty($vSenha) ? $vSenha : $userData['SenhaAtual'];
 
-        // Duplicidade de usuário
+        // Duplicidade
         if (empty($erros) && $vUsuario !== $userData['Usuario']) {
-            $chk = $conn->prepare("SELECT 1 FROM usuarios WHERE Usuario = ? AND UserId != ?");
+            $chk = $db->prepare("SELECT 1 FROM usuarios WHERE Usuario = ? AND UserId != ?");
             $chk->execute([$vUsuario, $vUserId]);
             if ($chk->fetch()) $erros[] = "Este nome de usuário já está em uso.";
         }
@@ -112,7 +135,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         // Empresa
         $empresa_nome = $userData['Empresa'];
         if (empty($erros)) {
-            $stmt = $conn->prepare("SELECT EmpresaSunny FROM sunnyempresas WHERE IdEmp = ?");
+            $stmt = $db->prepare("SELECT EmpresaSunny FROM sunnyempresas WHERE IdEmp = ?");
             $stmt->execute([$vIdEmp]);
             if ($row = $stmt->fetch()) {
                 $empresa_nome = $row['EmpresaSunny'];
@@ -124,7 +147,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         // Grupo
         $grupo_nome = $userData['Grupo'];
         if (empty($erros)) {
-            $stmt = $conn->prepare("SELECT Nome_Grupo FROM grupo WHERE ID_Grupo = ?");
+            $stmt = $db->prepare("SELECT Nome_Grupo FROM grupo WHERE ID_Grupo = ?");
             $stmt->execute([$vID_Grupo]);
             if ($row = $stmt->fetch()) {
                 $grupo_nome = $row['Nome_Grupo'];
@@ -142,60 +165,36 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         if (empty($erros)) {
             try {
-                $conn->beginTransaction();
+                $db->beginTransaction();
 
                 $sql = "
                     UPDATE usuarios SET
-                        Usuario = ?,
-                        SenhaAtual = ?,
-                        Nome = ?,
-                        CRECI = ?,
-                        Email = ?,
-                        Telefones = ?,
-                        Acoes = ?,
-                        Permissao = ?,
-                        Funcao = ?,
-                        Ativo = ?,
-                        IdEmp = ?,
-                        Empresa = ?,
-                        GrupoId = ?,
-                        Grupo = ?,
-                        Opr = ?
+                        Usuario = ?, SenhaAtual = ?, Nome = ?, CRECI = ?, Email = ?,
+                        Telefones = ?, Acoes = ?, Permissao = ?, Funcao = ?, Ativo = ?,
+                        IdEmp = ?, Empresa = ?, GrupoId = ?, Grupo = ?, Opr = ?
                     WHERE UserId = ?
                 ";
 
-                $stmt = $conn->prepare($sql);
+                $stmt = $db->prepare($sql);
                 $stmt->execute([
-                    $vUsuario,
-                    $senhaSalvar,
-                    $vNome,
-                    $vCRECI,
-                    $vEmail,
-                    $vTelefones,
-                    $vAcoes,
-                    $vPermissao,
-                    $vFuncao,
-                    $vAtivo,
-                    $vIdEmp,
-                    $empresa_nome,
-                    $vID_Grupo,
-                    $grupo_nome,
+                    $vUsuario, $senhaSalvar, $vNome, $vCRECI, $vEmail, $vTelefones,
+                    $vAcoes, $vPermissao, $vFuncao, $vAtivo,
+                    $vIdEmp, $empresa_nome, $vID_Grupo, $grupo_nome,
                     $_SESSION['Usuario'] ?? 'SISTEMA',
                     $vUserId
                 ]);
 
-                // Relacionamento (se a tabela existir)
-                $conn->prepare("DELETE FROM usuario_grupo WHERE UserId = ?")->execute([$vUserId]);
-                $conn->prepare("INSERT INTO usuario_grupo (UserId, ID_Grupo) VALUES (?, ?)")->execute([$vUserId, $vID_Grupo]);
+                $db->prepare("DELETE FROM usuario_grupo WHERE UserId = ?")->execute([$vUserId]);
+                $db->prepare("INSERT INTO usuario_grupo (UserId, ID_Grupo) VALUES (?, ?)")->execute([$vUserId, $vID_Grupo]);
 
-                $conn->commit();
+                $db->commit();
 
-                $_SESSION['MsgSucesso'] = "Usuário atualizado com sucesso!";
+                $_SESSION['MsgSucesso'] = "Usuário <strong>" . htmlspecialchars($vNome) . "</strong> atualizado com sucesso!";
                 header("Location: usr_listar.php");
                 exit;
 
             } catch (Exception $e) {
-                $conn->rollBack();
+                $db->rollBack();
                 $erros[] = "Erro ao atualizar: " . $e->getMessage();
             }
         }
@@ -208,221 +207,909 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
     }
 }
-?>
 
+// ============================================================
+// CARREGAR EMPRESAS E GRUPOS (para os selects)
+// ============================================================
+$listaEmpresas = [];
+$listaGrupos   = [];
+try {
+    $stmt = $db->query("SELECT IdEmp, EmpresaSunny FROM sunnyempresas ORDER BY EmpresaSunny");
+    $listaEmpresas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmt = $db->query("SELECT ID_Grupo, Nome_Grupo, Descricao_Grupo FROM grupo ORDER BY Nome_Grupo");
+    $listaGrupos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    error_log("[EDITAR_USU] " . $e->getMessage());
+}
+
+$permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
+?>
 <!DOCTYPE html>
-<html lang="pt-br" data-bs-theme="light">
+<html lang="pt-br">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sunny • Editar Usuário</title>
+    <title>Editar Usuário · <?= htmlspecialchars($form_data['Usuario'] ?? '') ?></title>
+
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
     <style>
-        body { background: linear-gradient(135deg, #f5f7fa 0%, #e4e9fd 100%); min-height:100vh; padding:2.5rem 1rem; }
-        .card { border:none; border-radius:1rem; box-shadow:0 10px 30px rgba(0,0,0,0.12); }
-        .card-header { background:#198754; color:white; padding:1.5rem; border-bottom:none; }
-        .form-section { background:#fff; border-radius:0.75rem; padding:1.75rem; margin-bottom:1.5rem; border:1px solid #e0e7ff; }
-        .form-label { font-weight:500; color:#444; }
-        .required-field::after { content:" *"; color:#dc3545; font-size:0.95em; }
-        .badge-permissao { font-size:0.85rem; padding:0.45em 0.9em; }
-        .purple { background:#6f42c1; color:white; }
-        @media (min-width:992px) { .two-columns { column-count:2; column-gap:2.5rem; } }
+        :root {
+            --primary: <?php echo $themeSafe['primary']; ?>;
+            --primary-dark: <?php echo $themeSafe['primary_dark']; ?>;
+            --bg-body: <?php echo $themeSafe['bg_body']; ?>;
+            --text-color: <?php echo $themeSafe['text_color']; ?>;
+            --card-bg: <?php echo $themeSafe['card_bg']; ?>;
+            --shadow-color: <?php echo $themeSafe['shadow_color']; ?>;
+            --btn-bg: <?php echo $themeSafe['btn_bg']; ?>;
+            --btn-hover: <?php echo $themeSafe['btn_hover']; ?>;
+            --btn-text: <?php echo $themeSafe['btn_text']; ?>;
+
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --purple: #6f42c1;
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-body);
+            background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.05) 1px, transparent 0);
+            background-size: 22px 22px;
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            color: var(--text-color);
+            min-height: 100vh;
+            padding-bottom: 96px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container-neo { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+
+        /* ============================================================ */
+        /* HEADER                                                       */
+        /* ============================================================ */
+        .page-header {
+            background: var(--primary);
+            color: #fff;
+            border-bottom: 5px solid var(--shadow-color);
+            box-shadow: 0 6px 0 0 var(--shadow-color);
+            padding: 14px 0;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            margin-bottom: 24px;
+        }
+        .page-header::after {
+            content: "";
+            position: absolute; inset: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.08) 0 50%, transparent 50% 100%);
+            background-size: 40px 40px;
+            pointer-events: none;
+        }
+        .header-inner {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+            position: relative;
+            z-index: 1;
+        }
+        .header-brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+        .header-logo {
+            height: 54px; width: auto; max-width: 140px; min-width: 54px;
+            object-fit: contain;
+            border: 3px solid var(--shadow-color);
+            border-radius: 10px;
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            background: #fff;
+            padding: 4px 8px;
+            flex-shrink: 0;
+        }
+        .header-title { min-width: 0; }
+        .header-title h1 {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 900;
+            letter-spacing: -0.3px;
+            line-height: 1.15;
+        }
+        .header-title p {
+            margin: 4px 0 0;
+            font-size: 0.76rem;
+            font-weight: 600;
+            opacity: 0.9;
+        }
+        .header-title p strong {
+            background: rgba(255,255,255,0.18);
+            padding: 1px 8px;
+            border-radius: 6px;
+        }
+
+        .header-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+        .meta-chip {
+            background: rgba(0,0,0,0.2);
+            border: 2px solid var(--shadow-color);
+            border-radius: 10px;
+            padding: 6px 12px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* ============================================================ */
+        /* CARDS                                                        */
+        /* ============================================================ */
+        .card-neo {
+            background: var(--card-bg);
+            border: 3px solid var(--shadow-color);
+            border-radius: 16px;
+            box-shadow: 6px 6px 0 0 var(--shadow-color);
+            margin-bottom: 22px;
+            overflow: hidden;
+        }
+        .card-neo-header {
+            background: var(--primary);
+            color: #fff;
+            padding: 14px 22px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 3px solid var(--shadow-color);
+        }
+        .card-neo-header i { font-size: 1rem; }
+        .card-neo-header h2 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 900;
+            letter-spacing: -0.2px;
+        }
+        .card-neo-body { padding: 22px; }
+
+        /* ============================================================ */
+        /* FORM                                                         */
+        /* ============================================================ */
+        .field-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.74rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: var(--text-color);
+            opacity: 0.85;
+            margin-bottom: 6px;
+        }
+        .field-label i { color: var(--primary); font-size: 0.82rem; }
+        .field-label .req { color: var(--danger); }
+
+        .form-control, .form-select {
+            border: 2px solid var(--shadow-color);
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-color);
+            background: #fff;
+            transition: all 0.15s;
+            box-shadow: 2px 2px 0 0 var(--shadow-color);
+        }
+        .form-control:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+        }
+        .form-control[readonly] { background: #f8f9fb; cursor: not-allowed; }
+        .form-control.font-monospace { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.78rem; }
+
+        /* Input group com prefixo */
+        .input-group-neo { display: flex; align-items: stretch; }
+        .input-group-neo .prefix {
+            background: rgba(0,0,0,0.05);
+            border: 2px solid var(--shadow-color);
+            border-right: none;
+            border-radius: 10px 0 0 10px;
+            padding: 0 12px;
+            display: flex; align-items: center;
+            color: var(--primary);
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+        .input-group-neo .form-control { border-radius: 0 10px 10px 0; }
+        .input-group-neo .btn-toggle-pwd {
+            border: 2px solid var(--shadow-color);
+            border-left: none;
+            border-radius: 0 10px 10px 0;
+            background: rgba(0,0,0,0.05);
+            color: var(--text-color);
+            padding: 0 14px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .input-group-neo .btn-toggle-pwd:hover { background: var(--primary); color: #fff; }
+
+        /* ============================================================ */
+        /* GRUPO / PERMISSÃO — CARDS                                    */
+        /* ============================================================ */
+        .option-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 10px;
+        }
+        .option-card {
+            position: relative;
+            display: block;
+            cursor: pointer;
+            background: #f8f9fb;
+            border: 2px solid var(--shadow-color);
+            border-radius: 12px;
+            padding: 12px 14px;
+            transition: all 0.15s;
+            box-shadow: 2px 2px 0 0 var(--shadow-color);
+            user-select: none;
+        }
+        .option-card:hover {
+            transform: translate(-1px, -1px);
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            background: #fff;
+        }
+        .option-card input { position: absolute; opacity: 0; pointer-events: none; }
+        .option-card .opt-title {
+            display: flex; align-items: center; gap: 8px;
+            font-weight: 800; font-size: 0.88rem;
+            color: var(--text-color);
+            margin-bottom: 3px;
+        }
+        .option-card .opt-title i { color: var(--primary); font-size: 0.85rem; }
+        .option-card .opt-id {
+            font-family: 'SFMono-Regular', Consolas, monospace;
+            font-size: 0.62rem;
+            background: rgba(0,0,0,0.08);
+            padding: 1px 6px;
+            border-radius: 4px;
+            color: var(--text-color);
+            opacity: 0.7;
+            font-weight: 700;
+            margin-left: auto;
+        }
+        .option-card .opt-desc {
+            font-size: 0.72rem;
+            color: var(--text-color);
+            opacity: 0.65;
+            font-weight: 500;
+            line-height: 1.3;
+        }
+        .option-card .opt-color-bar {
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 5px;
+            border-radius: 12px 0 0 12px;
+        }
+
+        .option-card.is-checked {
+            background: var(--primary);
+            border-color: var(--primary-dark);
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+        }
+        .option-card.is-checked .opt-title,
+        .option-card.is-checked .opt-title i,
+        .option-card.is-checked .opt-desc,
+        .option-card.is-checked .opt-id {
+            color: #fff;
+        }
+        .option-card.is-checked .opt-id { background: rgba(255,255,255,0.2); }
+        .option-card.is-checked .opt-color-bar { display: none; }
+
+        /* Cores por permissão */
+        .perm-danger    .opt-color-bar { background: var(--danger); }
+        .perm-warning   .opt-color-bar { background: var(--warning); }
+        .perm-info      .opt-color-bar { background: var(--info); }
+        .perm-primary   .opt-color-bar { background: var(--primary); }
+        .perm-secondary .opt-color-bar { background: #6b7280; }
+        .perm-purple    .opt-color-bar { background: var(--purple); }
+        .perm-success   .opt-color-bar { background: var(--success); }
+
+        /* ============================================================ */
+        /* BADGE PERMISSÃO                                              */
+        /* ============================================================ */
+        .perm-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 800;
+            font-size: 0.72rem;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            border: 2px solid var(--shadow-color);
+            box-shadow: 2px 2px 0 0 var(--shadow-color);
+            color: #fff;
+        }
+        .perm-badge.bg-danger    { background: var(--danger); }
+        .perm-badge.bg-warning   { background: var(--warning); color: #000; }
+        .perm-badge.bg-info      { background: var(--info); }
+        .perm-badge.bg-primary   { background: var(--primary); }
+        .perm-badge.bg-secondary { background: #6b7280; }
+        .perm-badge.bg-purple    { background: var(--purple); }
+        .perm-badge.bg-success   { background: var(--success); }
+
+        /* ============================================================ */
+        /* INFO METADATA                                                */
+        /* ============================================================ */
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 10px;
+        }
+        .meta-item {
+            background: rgba(0,0,0,0.03);
+            border: 2px solid var(--shadow-color);
+            border-radius: 10px;
+            padding: 10px 14px;
+        }
+        .meta-item small {
+            display: block;
+            font-size: 0.66rem;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 700;
+            color: var(--text-color);
+            opacity: 0.65;
+            margin-bottom: 3px;
+        }
+        .meta-item strong {
+            font-size: 0.85rem;
+            font-weight: 800;
+            color: var(--text-color);
+        }
+
+        /* ============================================================ */
+        /* ACTION BAR                                                   */
+        /* ============================================================ */
+        .action-bar {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: var(--card-bg);
+            border-top: 3px solid var(--shadow-color);
+            box-shadow: 0 -4px 0 0 var(--shadow-color);
+            padding: 14px 20px;
+            z-index: 40;
+        }
+        .action-bar-inner {
+            max-width: 960px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .action-info {
+            font-size: 0.82rem;
+            font-weight: 600;
+            opacity: 0.75;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .dirty-badge {
+            background: var(--warning);
+            color: #000;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-weight: 800;
+            font-size: 0.72rem;
+            display: none;
+        }
+        .dirty-badge.visible { display: inline-block; }
+
+        .btn-neo {
+            border: 2px solid var(--shadow-color);
+            border-radius: 10px;
+            padding: 10px 22px;
+            font-weight: 800;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: inherit;
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            text-decoration: none;
+        }
+        .btn-neo:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 0 var(--shadow-color); }
+        .btn-neo:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-neo-primary { background: var(--btn-bg); color: var(--btn-text); }
+        .btn-neo-primary:hover:not(:disabled) { background: var(--btn-hover); color: #fff; }
+        .btn-neo-secondary { background: #fff; color: var(--text-color); }
+        .btn-neo-secondary:hover { background: #f8f9fb; color: var(--text-color); }
+
+        /* ============================================================ */
+        /* RESPONSIVO                                                   */
+        /* ============================================================ */
+        @media (max-width: 768px) {
+            .page-header { padding: 10px 0; }
+            .header-inner { padding: 0 12px; }
+            .header-logo { height: 42px; max-width: 100px; }
+            .header-title h1 { font-size: 0.98rem; }
+            .header-title p { font-size: 0.7rem; }
+            .header-meta { width: 100%; }
+            .meta-chip { flex: 1; justify-content: center; font-size: 0.66rem; padding: 4px 8px; }
+            .container-neo { padding: 0 12px; }
+            .card-neo-body { padding: 14px; }
+            .card-neo-header { padding: 12px 16px; }
+            .option-grid { grid-template-columns: 1fr; }
+            .action-bar-inner { flex-direction: column; align-items: stretch; }
+            .action-bar-inner .btn-neo { width: 100%; justify-content: center; }
+            .action-info { justify-content: center; }
+        }
     </style>
 </head>
 <body>
 
-<div class="container" style="max-width:920px;">
-    <div class="card shadow-lg">
-        <div class="card-header text-center">
-            <h4 class="mb-0"><i class="fa-solid fa-user-pen me-2"></i>Editar Usuário</h4>
+<!-- ============================================================ -->
+<!-- HEADER                                                       -->
+<!-- ============================================================ -->
+<header class="page-header">
+    <div class="header-inner">
+        <div class="header-brand">
+            <img src="img/logosunny.jpg" alt="Logo" class="header-logo" onerror="this.style.display='none'">
+            <div class="header-title">
+                <h1><i class="fas fa-user-pen me-2"></i> Editar Usuário</h1>
+                <p>
+                    <strong>#<?= (int)$vUserId ?></strong>
+                    <?= htmlspecialchars(strtoupper($form_data['Usuario'] ?? '')) ?>
+                    <?php if (!empty($form_data['Nome'])): ?>
+                        · <?= htmlspecialchars($form_data['Nome']) ?>
+                    <?php endif; ?>
+                </p>
+            </div>
         </div>
 
-        <div class="card-body p-4 p-lg-5">
+        <div class="header-meta">
+            <span class="meta-chip">
+                <i class="fas fa-user-shield"></i>
+                <?= htmlspecialchars($permAtual['nome']) ?>
+            </span>
+            <span class="meta-chip">
+                <i class="fas fa-<?= !empty($form_data['Ativo']) ? 'check-circle' : 'times-circle' ?>"></i>
+                <?= !empty($form_data['Ativo']) ? 'Ativo' : 'Inativo' ?>
+            </span>
+        </div>
+    </div>
+</header>
 
-            <?php if (isset($_SESSION['MsgErro'])): ?>
-            <div class="alert alert-danger alert-dismissible fade show">
-                <i class="fa-solid fa-circle-exclamation me-2"></i>
-                <?= $_SESSION['MsgErro'] ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+<!-- ============================================================ -->
+<!-- CONTEÚDO                                                     -->
+<!-- ============================================================ -->
+<div class="container-neo">
+
+    <!-- Alertas de erro (se redirect em GET trouxe algo) -->
+    <?php if (isset($_SESSION['MsgErro'])): ?>
+        <div class="alert-neo alert-danger" style="background:var(--danger);color:#fff;border:3px solid var(--shadow-color);border-radius:14px;padding:14px 18px;margin-bottom:18px;font-weight:700;display:flex;gap:10px;">
+            <i class="fas fa-exclamation-circle"></i>
+            <div><?= $_SESSION['MsgErro']; unset($_SESSION['MsgErro']); ?></div>
+        </div>
+    <?php endif; ?>
+
+    <form method="post" id="formEditar" novalidate>
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+
+        <!-- ============================================ -->
+        <!-- METADADOS (readonly)                          -->
+        <!-- ============================================ -->
+        <div class="card-neo">
+            <div class="card-neo-header">
+                <i class="fas fa-info-circle"></i>
+                <h2>Informações do Registro</h2>
             </div>
-            <?php unset($_SESSION['MsgErro']); endif; ?>
-
-            <form method="post" class="needs-validation" novalidate>
-                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-
-                <!-- Dados Pessoais -->
-                <fieldset class="form-section">
-                    <legend class="float-none w-auto px-3 text-success fw-bold">Dados Pessoais</legend>
-                    <div class="row g-3">
-                        <div class="col-md-8">
-                            <label for="Nome" class="form-label required-field">Nome completo</label>
-                            <div class="input-group">
-                                <span class="input-group-text"><i class="fa-solid fa-user"></i></span>
-                                <input type="text" class="form-control" id="Nome" name="Nome" required value="<?= htmlspecialchars($form_data['Nome'] ?? '') ?>">
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <label for="CRECI" class="form-label">CRECI</label>
-                            <input type="text" class="form-control" id="CRECI" name="CRECI" value="<?= htmlspecialchars($form_data['CRECI'] ?? '') ?>">
-                        </div>
-                        <div class="col-12">
-                            <label for="Email" class="form-label">E-mail</label>
-                            <div class="input-group">
-                                <span class="input-group-text"><i class="fa-solid fa-envelope"></i></span>
-                                <input type="email" class="form-control" id="Email" name="Email" value="<?= htmlspecialchars($form_data['Email'] ?? '') ?>">
-                            </div>
-                        </div>
-                        <div class="col-12">
-                            <label for="Telefones" class="form-label">Telefones</label>
-                            <div class="input-group">
-                                <span class="input-group-text"><i class="fa-solid fa-phone"></i></span>
-                                <input type="text" class="form-control" id="Telefones" name="Telefones" value="<?= htmlspecialchars($form_data['Telefones'] ?? '') ?>">
-                            </div>
-                        </div>
+            <div class="card-neo-body">
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <small>Cadastrado por</small>
+                        <strong><?= htmlspecialchars($userData['UsuarioCadastro'] ?? 'SISTEMA') ?></strong>
                     </div>
-                </fieldset>
-
-                <!-- Acesso e Permissões -->
-                <fieldset class="form-section">
-                    <legend class="float-none w-auto px-3 text-success fw-bold">Acesso & Permissões</legend>
-                    <div class="two-columns">
-                        <div>
-                            <label for="Usuario" class="form-label required-field">Usuário</label>
-                            <div class="input-group mb-3">
-                                <span class="input-group-text"><i class="fa-solid fa-at"></i></span>
-                                <input type="text" class="form-control" id="Usuario" name="Usuario" required value="<?= htmlspecialchars($form_data['Usuario'] ?? '') ?>">
-                            </div>
-
-                            <label for="Senha" class="form-label">Nova senha (opcional)</label>
-                            <div class="input-group mb-3">
-                                <span class="input-group-text"><i class="fa-solid fa-lock"></i></span>
-                                <input type="password" class="form-control" id="Senha" name="Senha">
-                                <button class="btn btn-outline-secondary" type="button" id="toggleSenha">
-                                    <i class="fa-solid fa-eye"></i>
-                                </button>
-                            </div>
-                            <small class="text-muted">Deixe em branco para manter a senha atual.</small>
-
-                            <label for="IdEmp" class="form-label required-field">Empresa</label>
-                            <select class="form-select mb-3" id="IdEmp" name="IdEmp" required>
-                                <option value="">Selecione...</option>
-                                <?php
-                                $stmt = $conn->query("SELECT IdEmp, EmpresaSunny FROM sunnyempresas ORDER BY EmpresaSunny");
-                                while ($row = $stmt->fetch()) {
-                                    $selected = ($form_data['IdEmp'] ?? 0) == $row['IdEmp'] ? 'selected' : '';
-                                    echo "<option value='{$row['IdEmp']}' $selected>" . htmlspecialchars($row['EmpresaSunny']) . "</option>";
-                                }
-                                ?>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label for="ID_Grupo" class="form-label required-field">Grupo</label>
-                            <select class="form-select mb-3" id="ID_Grupo" name="ID_Grupo" required>
-                                <option value="">Selecione...</option>
-                                <?php
-                                $stmt = $conn->query("SELECT ID_Grupo, Nome_Grupo FROM grupo ORDER BY Nome_Grupo");
-                                while ($row = $stmt->fetch()) {
-                                    $selected = ($form_data['GrupoId'] ?? 0) == $row['ID_Grupo'] ? 'selected' : '';
-                                    echo "<option value='{$row['ID_Grupo']}' $selected>" . htmlspecialchars($row['Nome_Grupo']) . "</option>";
-                                }
-                                ?>
-                            </select>
-
-                            <label for="Permissao" class="form-label required-field">Nível de Permissão</label>
-                            <select class="form-select mb-3" id="Permissao" name="Permissao" required onchange="atualizarFuncao()">
-                                <option value="" disabled <?= empty($form_data['Permissao']) ? 'selected' : '' ?>>Selecione...</option>
-                                <?php
-                                $permissoes = [
-                                    1 => "SUPERADMIN",
-                                    2 => "ADMIN",
-                                    3 => "GESTOR-EDITOR",
-                                    4 => "EDITOR",
-                                    5 => "CORRETOR",
-                                    6 => "CORRETOR-EDITOR",
-                                    7 => "VISUALIZADOR"
-                                ];
-                                foreach ($permissoes as $valor => $texto) {
-                                    $selected = ($form_data['Permissao'] ?? 0) == $valor ? 'selected' : '';
-                                    echo "<option value=\"$valor\" $selected>$texto</option>";
-                                }
-                                ?>
-                            </select>
-
-                            <div class="form-check form-switch mt-4">
-                                <input class="form-check-input" type="checkbox" id="Ativo" name="Ativo" value="1"
-                                       <?= ($form_data['Ativo'] ?? 1) ? 'checked' : '' ?>>
-                                <label class="form-check-label fw-bold" for="Ativo">Usuário Ativo</label>
-                            </div>
-                        </div>
+                    <div class="meta-item">
+                        <small>Data do cadastro</small>
+                        <strong>
+                            <?php
+                                $dt = $userData['DataHoraCadastro'] ?? null;
+                                echo $dt ? date('d/m/Y H:i', strtotime($dt)) : '—';
+                            ?>
+                        </strong>
                     </div>
-
-                    <div class="mt-4">
-                        <label class="form-label">Função</label>
-                        <div class="input-group">
-                            <input type="text" class="form-control" id="Funcao" name="Funcao" readonly value="<?= htmlspecialchars($form_data['Funcao'] ?? '') ?>">
-                            <span id="badgePermissao" class="input-group-text badge-permissao bg-<?= getPermissaoInfo($form_data['Permissao'] ?? 0)['cor'] ?>">
-                                <i class="fa-solid fa-user-shield"></i>
-                            </span>
-                        </div>
+                    <div class="meta-item">
+                        <small>Licença</small>
+                        <strong><?= htmlspecialchars($userData['Licenca'] ?? '—') ?></strong>
                     </div>
-
-                    <div class="mt-3">
-                        <label class="form-label">Ações permitidas</label>
-                        <textarea class="form-control font-monospace" id="Acoes" name="Acoes" rows="3" readonly><?= htmlspecialchars($form_data['Acoes'] ?? '') ?></textarea>
+                    <div class="meta-item">
+                        <small>Operador</small>
+                        <strong><?= htmlspecialchars($userData['Opr'] ?? '—') ?></strong>
                     </div>
-                </fieldset>
-
-                <div class="d-flex gap-3 justify-content-end mt-5">
-                    <a href="usr_listar.php" class="btn btn-outline-secondary btn-lg px-5">
-                        <i class="fa-solid fa-arrow-left me-2"></i>Voltar
-                    </a>
-                    <button type="submit" class="btn btn-success btn-lg px-5">
-                        <i class="fa-solid fa-floppy-disk me-2"></i>Salvar Alterações
-                    </button>
                 </div>
-            </form>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- DADOS PESSOAIS                                -->
+        <!-- ============================================ -->
+        <div class="card-neo">
+            <div class="card-neo-header">
+                <i class="fas fa-user"></i>
+                <h2>Dados Pessoais</h2>
+            </div>
+            <div class="card-neo-body">
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label class="field-label" for="Nome">
+                            <i class="fas fa-signature"></i> Nome completo <span class="req">*</span>
+                        </label>
+                        <input type="text" class="form-control" id="Nome" name="Nome" required
+                               value="<?= htmlspecialchars($form_data['Nome'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="field-label" for="CRECI">
+                            <i class="fas fa-id-badge"></i> CRECI
+                        </label>
+                        <input type="text" class="form-control" id="CRECI" name="CRECI"
+                               value="<?= htmlspecialchars($form_data['CRECI'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="field-label" for="Email">
+                            <i class="fas fa-envelope"></i> E-mail
+                        </label>
+                        <input type="email" class="form-control" id="Email" name="Email"
+                               value="<?= htmlspecialchars($form_data['Email'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="field-label" for="Telefones">
+                            <i class="fas fa-phone"></i> Telefones
+                        </label>
+                        <input type="text" class="form-control" id="Telefones" name="Telefones"
+                               value="<?= htmlspecialchars($form_data['Telefones'] ?? '') ?>">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- ACESSO                                        -->
+        <!-- ============================================ -->
+        <div class="card-neo">
+            <div class="card-neo-header">
+                <i class="fas fa-key"></i>
+                <h2>Acesso & Credenciais</h2>
+            </div>
+            <div class="card-neo-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="field-label" for="Usuario">
+                            <i class="fas fa-at"></i> Usuário <span class="req">*</span>
+                        </label>
+                        <div class="input-group-neo">
+                            <span class="prefix"><i class="fas fa-at"></i></span>
+                            <input type="text" class="form-control" id="Usuario" name="Usuario" required
+                                   value="<?= htmlspecialchars($form_data['Usuario'] ?? '') ?>">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="field-label" for="Senha">
+                            <i class="fas fa-lock"></i> Nova senha (opcional)
+                        </label>
+                        <div class="input-group-neo">
+                            <span class="prefix"><i class="fas fa-lock"></i></span>
+                            <input type="password" class="form-control" id="Senha" name="Senha"
+                                   placeholder="Deixe em branco para manter a atual">
+                            <button type="button" class="btn-toggle-pwd" id="toggleSenha" title="Mostrar/ocultar senha">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="field-label" for="IdEmp">
+                            <i class="fas fa-building"></i> Empresa <span class="req">*</span>
+                        </label>
+                        <select class="form-select" id="IdEmp" name="IdEmp" required>
+                            <option value="">Selecione…</option>
+                            <?php foreach ($listaEmpresas as $emp): ?>
+                                <option value="<?= (int)$emp['IdEmp'] ?>"
+                                    <?= ((int)($form_data['IdEmp'] ?? 0) === (int)$emp['IdEmp']) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($emp['EmpresaSunny']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="col-md-6" style="display:flex;align-items:flex-end;">
+                        <label class="option-card" style="width:100%;">
+                            <input type="checkbox" id="Ativo" name="Ativo" value="1"
+                                   <?= !empty($form_data['Ativo']) ? 'checked' : '' ?>>
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                                <div>
+                                    <div class="opt-title" style="margin-bottom:0;">
+                                        <i class="fas fa-power-off"></i>
+                                        <span>Usuário Ativo</span>
+                                    </div>
+                                    <div class="opt-desc">Permite login no sistema</div>
+                                </div>
+                                <div class="form-check form-switch m-0" style="pointer-events:none;">
+                                    <input class="form-check-input" type="checkbox"
+                                           <?= !empty($form_data['Ativo']) ? 'checked' : '' ?> disabled>
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- GRUPO                                         -->
+        <!-- ============================================ -->
+        <div class="card-neo">
+            <div class="card-neo-header">
+                <i class="fas fa-users"></i>
+                <h2>Grupo de Acesso <span style="font-size:0.7rem;opacity:0.8;font-weight:600;margin-left:6px;">(obrigatório)</span></h2>
+            </div>
+            <div class="card-neo-body">
+                <?php if (empty($listaGrupos)): ?>
+                    <div style="padding:20px;text-align:center;opacity:0.6;">Nenhum grupo cadastrado.</div>
+                <?php else: ?>
+                    <div class="option-grid">
+                        <?php
+                        $grupoSelecionado = (int)($form_data['GrupoId'] ?? $form_data['ID_Grupo'] ?? 0);
+                        foreach ($listaGrupos as $g):
+                            $gId   = (int)$g['ID_Grupo'];
+                            $gNome = $g['Nome_Grupo'];
+                            $gDesc = $g['Descricao_Grupo'] ?? '';
+                            $checked = ($grupoSelecionado === $gId) ? 'checked' : '';
+                        ?>
+                            <label class="option-card <?= $checked ? 'is-checked' : '' ?>">
+                                <input type="radio" name="ID_Grupo" value="<?= $gId ?>" <?= $checked ?> required>
+                                <div class="opt-title">
+                                    <i class="fas fa-users"></i>
+                                    <span><?= htmlspecialchars($gNome) ?></span>
+                                    <span class="opt-id">#<?= $gId ?></span>
+                                </div>
+                                <?php if (!empty($gDesc)): ?>
+                                    <div class="opt-desc"><?= htmlspecialchars($gDesc) ?></div>
+                                <?php endif; ?>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- PERMISSÃO                                     -->
+        <!-- ============================================ -->
+        <div class="card-neo">
+            <div class="card-neo-header">
+                <i class="fas fa-user-shield"></i>
+                <h2>Nível de Permissão</h2>
+            </div>
+            <div class="card-neo-body">
+                <div class="option-grid">
+                    <?php
+                    $permSelecionada = (int)($form_data['Permissao'] ?? 0);
+                    $permissoes = [
+                        1 => "SUPERADMIN",
+                        2 => "ADMIN",
+                        3 => "GESTOR-EDITOR",
+                        4 => "EDITOR",
+                        5 => "CORRETOR",
+                        6 => "CORRETOR-EDITOR",
+                        7 => "VISUALIZADOR",
+                    ];
+                    foreach ($permissoes as $cod => $nome):
+                        $info = getPermissaoInfo($cod);
+                        $checked = ($permSelecionada === $cod) ? 'checked' : '';
+                    ?>
+                        <label class="option-card perm-<?= $info['cor'] ?> <?= $checked ? 'is-checked' : '' ?>">
+                            <input type="radio" name="Permissao" value="<?= $cod ?>"
+                                   data-funcao="<?= htmlspecialchars($info['nome']) ?>"
+                                   data-acoes="<?= htmlspecialchars($info['acoes']) ?>"
+                                   <?= $checked ?> required>
+                            <div class="opt-color-bar"></div>
+                            <div class="opt-title">
+                                <i class="fas fa-shield-alt"></i>
+                                <span><?= htmlspecialchars($nome) ?></span>
+                                <span class="opt-id"><?= $cod ?></span>
+                            </div>
+                            <div class="opt-desc"><?= htmlspecialchars($info['desc']) ?></div>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
+
+                <div class="row g-3 mt-2">
+                    <div class="col-md-4">
+                        <label class="field-label">
+                            <i class="fas fa-briefcase"></i> Função
+                        </label>
+                        <input type="text" class="form-control" id="Funcao" name="Funcao" readonly
+                               value="<?= htmlspecialchars($form_data['Funcao'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="field-label">
+                            <i class="fas fa-list-check"></i> Ações permitidas
+                        </label>
+                        <input type="text" class="form-control font-monospace" id="Acoes" name="Acoes" readonly
+                               value="<?= htmlspecialchars($form_data['Acoes'] ?? '') ?>">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </form>
+</div>
+
+<!-- ============================================================ -->
+<!-- ACTION BAR                                                   -->
+<!-- ============================================================ -->
+<div class="action-bar">
+    <div class="action-bar-inner">
+        <div class="action-info">
+            <i class="fas fa-info-circle"></i>
+            <span id="actionHint">Nenhuma alteração pendente</span>
+            <span class="dirty-badge" id="dirtyBadge">Alterações pendentes</span>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="usr_listar.php" class="btn-neo btn-neo-secondary">
+                <i class="fas fa-arrow-left"></i> Voltar
+            </a>
+            <button type="submit" form="formEditar" class="btn-neo btn-neo-primary" id="btnSalvar">
+                <i class="fas fa-floppy-disk"></i> Salvar Alterações
+            </button>
         </div>
     </div>
 </div>
 
+<!-- ============================================================ -->
+<!-- SCRIPTS                                                      -->
+<!-- ============================================================ -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-const permissoes = {
-    "1": { funcao: "SUPERADMIN", acoes: "/GESTAO/SISTEMA/USUARIOS/BACKUP/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/", cor: "danger" },
-    "2": { funcao: "ADMIN", acoes: "/USUARIOS/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/", cor: "warning" },
-    "3": { funcao: "GESTOR-EDITOR", acoes: "/GESTOR/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/", cor: "info" },
-    "4": { funcao: "EDITOR", acoes: "/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/", cor: "primary" },
-    "5": { funcao: "CORRETOR", acoes: "/CONSULTAR/", cor: "secondary" },
-    "6": { funcao: "CORRETOR-EDITOR", acoes: "/CONSULTAR/EDITAR/", cor: "purple" },
-    "7": { funcao: "VISUALIZADOR", acoes: "/CONSULTAR/", cor: "success" }
-};
+(function () {
+    'use strict';
 
-function atualizarFuncao() {
-    const perm = document.getElementById("Permissao")?.value || "";
-    const info = permissoes[perm] || { funcao: "", acoes: "", cor: "light" };
+    const THEME_PRIMARY = '<?= $themeSafe['primary'] ?>';
 
-    document.getElementById("Funcao").value = info.funcao;
-    document.getElementById("Acoes").value = info.acoes;
-
-    const badge = document.getElementById("badgePermissao");
-    if (badge) badge.className = `input-group-text badge-permissao bg-${info.cor} text-white`;
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-    atualizarFuncao();
-
-    document.getElementById("toggleSenha")?.addEventListener("click", function() {
-        const input = document.getElementById("Senha");
-        const icon = this.querySelector("i");
-        input.type = input.type === "password" ? "text" : "password";
-        icon.classList.toggle("fa-eye");
-        icon.classList.toggle("fa-eye-slash");
+    const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3500,
+        timerProgressBar: true
     });
-});
+
+    // ============================================================
+    // Toggle senha
+    // ============================================================
+    document.getElementById('toggleSenha')?.addEventListener('click', function () {
+        const input = document.getElementById('Senha');
+        const icon  = this.querySelector('i');
+        input.type = input.type === 'password' ? 'text' : 'password';
+        icon.classList.toggle('fa-eye');
+        icon.classList.toggle('fa-eye-slash');
+    });
+
+    // ============================================================
+    // Permissão → atualiza Função + Ações
+    // ============================================================
+    function aplicarPermissao(radio) {
+        if (!radio) return;
+        document.getElementById('Funcao').value = radio.dataset.funcao || '';
+        document.getElementById('Acoes').value  = radio.dataset.acoes  || '';
+
+        document.querySelectorAll('input[name="Permissao"]').forEach(r => {
+            r.closest('.option-card')?.classList.toggle('is-checked', r.checked);
+        });
+    }
+
+    document.querySelectorAll('input[name="Permissao"]').forEach(radio => {
+        radio.addEventListener('change', () => aplicarPermissao(radio));
+    });
+    // estado inicial
+    aplicarPermissao(document.querySelector('input[name="Permissao"]:checked'));
+
+    // ============================================================
+    // Grupo (radio cards)
+    // ============================================================
+    document.querySelectorAll('input[name="ID_Grupo"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            document.querySelectorAll('input[name="ID_Grupo"]').forEach(r => {
+                r.closest('.option-card')?.classList.toggle('is-checked', r.checked);
+            });
+        });
+    });
+
+    // ============================================================
+    // Dirty state
+    // ============================================================
+    let formOriginal = null;
+
+    function capturarEstado() {
+        const form = document.getElementById('formEditar');
+        const data = new FormData(form);
+        const obj = {};
+        for (const [k, v] of data.entries()) {
+            if (k === 'csrf_token') continue;
+            obj[k] = v;
+        }
+        return JSON.stringify(obj);
+    }
+
+    function verificarDirty() {
+        if (!formOriginal) return false;
+        const dirty = capturarEstado() !== formOriginal;
+        const badge = document.getElementById('dirtyBadge');
+        const hint  = document.getElementById('actionHint');
+        badge.classList.toggle('visible', dirty);
+        hint.textContent = dirty ? 'Alterações não salvas' : 'Nenhuma alteração pendente';
+        return dirty;
+    }
+
+    formOriginal = capturarEstado();
+    document.querySelectorAll('#formEditar input, #formEditar select, #formEditar textarea').forEach(el => {
+        el.addEventListener('input', verificarDirty);
+        el.addEventListener('change', verificarDirty);
+    });
+
+    // Aviso ao sair
+    window.addEventListener('beforeunload', function (e) {
+        if (verificarDirty()) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+
+    // ============================================================
+    // Submit
+    // ============================================================
+    document.getElementById('formEditar').addEventListener('submit', function (e) {
+        // validação nativa do browser
+        if (!this.checkValidity()) {
+            e.preventDefault();
+            this.reportValidity();
+            return;
+        }
+        const btn = document.getElementById('btnSalvar');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando…';
+    });
+
+    // ============================================================
+    // Flash messages
+    // ============================================================
+    <?php if (isset($_SESSION['MsgSucesso'])): ?>
+        Toast.fire({ icon: 'success', title: <?= json_encode(strip_tags($_SESSION['MsgSucesso'])) ?> });
+        <?php unset($_SESSION['MsgSucesso']); ?>
+    <?php endif; ?>
+
+})();
 </script>
+
 </body>
 </html>
-
-<?php $conn = null; ?>
+<?php
+// Fecha conexão com segurança
+if (isset($conn) && $conn instanceof PDO) { $conn = null; }
+if (isset($pdo)  && $pdo  instanceof PDO) { $pdo  = null; }
+?>

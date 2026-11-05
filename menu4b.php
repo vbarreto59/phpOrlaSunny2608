@@ -261,7 +261,7 @@ $usuarioLogado = $_SESSION['Usuario'];
         <span class="group-title">Painel Administrativo</span>
         
         <div class="row">
-            <div class="col-6 col-md-3 mb-4">
+            <div class="col-6 col-md-4 mb-4">
                 <a href="gestao_empresa_list2.php" class="menu-card" target="_blank">
                     <i class="fas fa-building"></i>
                     <h3>Empresas</h3>
@@ -269,7 +269,7 @@ $usuarioLogado = $_SESSION['Usuario'];
                 </a>
             </div>
 
-            <div class="col-6 col-md-3 mb-4">
+            <div class="col-6 col-md-4 mb-4">
                 <a href="gestao_empreend_list_card.php" class="menu-card" target="_blank">
                     <i class="fas fa-city"></i>
                     <h3>Empreendimentos</h3>
@@ -277,7 +277,15 @@ $usuarioLogado = $_SESSION['Usuario'];
                 </a>
             </div>
 
-            <div class="col-6 col-md-3 mb-4">
+            <div class="col-6 col-md-4 mb-4">
+                <a href="empreend_v3_imagem_paste.php" class="menu-card" target="_blank">
+                    <i class="fas fa-images"></i>
+                    <h3>Imagens</h3>
+                    <p>Cards dos Empreendimentos</p>
+                </a>
+            </div>
+
+            <div class="col-6 col-md-4 mb-4">
                 <a href="empreend_update_nomeempreendimento.php" class="menu-card" target="_blank">
                     <i class="fas fa-pen-square"></i>
                     <h3>Nomes</h3>
@@ -285,7 +293,7 @@ $usuarioLogado = $_SESSION['Usuario'];
                 </a>
             </div>
 
-            <div class="col-6 col-md-3 mb-4">
+            <div class="col-6 col-md-4 mb-4">
                 <a href="empreend_update_tipologia.php" class="menu-card" target="_blank">
                     <i class="fas fa-layer-group"></i>
                     <h3>Tipologias</h3>
@@ -293,7 +301,7 @@ $usuarioLogado = $_SESSION['Usuario'];
                 </a>
             </div>
 
-            <div class="col-6 col-md-3 mb-4">
+            <div class="col-6 col-md-4 mb-4">
                 <a href="empreend_update_localizacao.php" class="menu-card" target="_blank">
                     <i class="fas fa-map-marked-alt"></i>
                     <h3>Localização</h3>
@@ -301,7 +309,7 @@ $usuarioLogado = $_SESSION['Usuario'];
                 </a>
             </div>
 
-            <div class="col-6 col-md-3 mb-4">
+            <div class="col-6 col-md-4 mb-4">
                 <a href="empreend_update_comissao.php" class="menu-card" target="_blank">
                     <i class="fas fa-hand-holding-usd"></i>
                     <h3>Comissões</h3>
@@ -309,7 +317,7 @@ $usuarioLogado = $_SESSION['Usuario'];
                 </a>
             </div>
 
-            <div class="col-6 col-md-3 mb-4">
+            <div class="col-6 col-md-4 mb-4">
                 <a href="empreend_verificacao2.php" class="menu-card" target="_blank">
                     <i class="fas fa-clipboard-check"></i>
                     <h3>Auditoria</h3>
@@ -317,8 +325,8 @@ $usuarioLogado = $_SESSION['Usuario'];
                 </a>
             </div>
 
-            <div class="col-6 col-md-3 mb-4">
-                <a href="usr_usuarios_ativos_tocca_onze.php" class="menu-card" target="_blank">
+            <div class="col-6 col-md-4 mb-4">
+                <a href="usr_usuarios_ativos_sunny.php" class="menu-card" target="_blank">
                     <i class="fas fa-user-shield"></i>
                     <h3>Usuários</h3>
                     <p>Equipe e Acessos</p>
@@ -328,7 +336,7 @@ $usuarioLogado = $_SESSION['Usuario'];
     </div>
 
     <footer>
-        <?= $nomeEmpresa ?> &copy; <?= date('Y') ?> | Sistema S.IMOB
+        <?= $nomeEmpresa ?> &copy; <?= date('Y') ?> | Sistema SunnyImob
     </footer>
 </div>
 

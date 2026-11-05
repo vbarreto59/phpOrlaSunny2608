@@ -1,1207 +1,1778 @@
 <?php
-session_start();
+// session_start() PRIMEIRO
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 require_once 'conn.php';
+require_once 'theme_config.php';
 
-// ==================== FUNÇÕES AUXILIARES ====================
-function usuarioPodeEditar() {
-    return isset($_SESSION['Usuario']) && !empty($_SESSION['Usuario']);
-}
-
-function getCheckboxValue($valor) {
-    return ($valor == "on") ? 1 : 0;
-}
-
-function formatarParaDecimalPonto($valor) {
-    if (empty($valor)) return '';
-    $valorSemPontos = str_replace('.', '', $valor);
-    return str_replace(',', '.', $valorSemPontos);
-}
-
-function removerNumeros($texto) {
-    return preg_replace('/[0-9*-]/', '', $texto);
-}
-
-// ==================== FUNÇÃO DE ENVIO DE EMAIL ====================
-function enviarEmailAtualizacao($empreendimentoId, $nomeEmpreendimento, $usuario, $alteracoes, $sql, $dadosAntigos, $dadosNovos) {
-    $to = "valterpb@gmail.com, valterpb@hotmail.com";
-    $subject = "[SI-CARAC] " . htmlspecialchars($nomeEmpreendimento) . " - ID: " . $empreendimentoId;
-    
-    $headers = "From: sendmail@gabnetweb.com.br\r\n";
-    $headers .= "Reply-To: sendmail@gabnetweb.com.br\r\n";
-    $headers .= "MIME-Version: 1.0\r\n";
-    $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-    
-    // Montar o corpo do email em HTML
-    $body = '
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Atualização de Empreendimento</title>
-        <style>
-            body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }
-            .container { background-color: white; border-radius: 8px; padding: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 900px; margin: 0 auto; }
-            .header { background-color: #800000; color: white; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
-            h1 { margin: 0; font-size: 22px; font-weight: bold; }
-            h2 { color: #333; border-bottom: 2px solid #800000; padding-bottom: 10px; margin-top: 25px; font-size: 18px; }
-            .info-box { background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 18px; margin: 20px 0; border-radius: 5px; }
-            .field-change { background-color: #fff3cd; padding: 12px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #ffc107; }
-            table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-            th { background-color: #800000; color: white; padding: 12px; text-align: left; font-weight: bold; }
-            td { padding: 12px; border-bottom: 1px solid #ddd; }
-            .timestamp { color: #666; font-size: 13px; margin-top: 25px; padding-top: 20px; border-top: 1px solid #ddd; }
-            .btn { display: inline-block; background-color: #800000; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; margin-top: 15px; font-weight: bold; }
-            .ip-address { background-color: #e9ecef; padding: 6px 12px; border-radius: 4px; font-family: monospace; font-size: 14px; }
-            .changed-field { background-color: #fff3cd; }
-            .no-changes { background-color: #d4edda; padding: 15px; border-radius: 5px; text-align: center; }
-            .sql-box { background-color: #f8f9fa; padding: 15px; border-radius: 5px; font-family: "Courier New", monospace; font-size: 13px; overflow-x: auto; border: 1px solid #ddd; }
-            .badge { display: inline-block; padding: 4px 8px; border-radius: 3px; font-size: 12px; font-weight: bold; }
-            .badge-old { background-color: #f8d7da; color: #721c24; }
-            .badge-new { background-color: #d4edda; color: #155724; }
-            .summary { display: flex; justify-content: space-between; background-color: #e9ecef; padding: 15px; border-radius: 5px; margin: 15px 0; }
-            .summary-item { text-align: center; }
-            .summary-number { font-size: 24px; font-weight: bold; color: #800000; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>📋 Atualização de Empreendimento - Sistema SunnyImob</h1>
-                <p>Notificação automática de alterações no sistema</p>
-            </div>
-            
-            <div class="info-box">
-                <p><strong>🆔 ID do Empreendimento:</strong> ' . $empreendimentoId . '</p>
-                <p><strong>🏢 Nome:</strong> <strong style="color: #800000;">' . htmlspecialchars($nomeEmpreendimento) . '</strong></p>
-                <p><strong>👤 Usuário responsável:</strong> <strong>' . htmlspecialchars($usuario) . '</strong></p>
-                <p><strong>🌐 IP de origem:</strong> <span class="ip-address">' . ($_SERVER['REMOTE_ADDR'] ?? 'N/A') . '</span></p>
-                <p><strong>🕐 Data/Hora:</strong> ' . date('d/m/Y H:i:s') . '</p>
-            </div>';
-    
-    // Resumo das alterações
-    $totalAlteracoes = count($alteracoes);
-    $body .= '
-            <div class="summary">
-                <div class="summary-item">
-                    <div class="summary-number">' . $totalAlteracoes . '</div>
-                    <div>Campos Alterados</div>
-                </div>
-                <div class="summary-item">
-                    <div class="summary-number">' . date('H:i') . '</div>
-                    <div>Horário</div>
-                </div>
-                <div class="summary-item">
-                    <div class="summary-number">' . date('d/m') . '</div>
-                    <div>Data</div>
-                </div>
-            </div>';
-    
-    $body .= '<h2>🔍 Alterações Detalhadas</h2>';
-    
-    // Listar alterações específicas
-    if (!empty($alteracoes)) {
-        $body .= '<div style="margin-bottom: 20px;">';
-        foreach ($alteracoes as $campo => $valores) {
-            $body .= '<div class="field-change">';
-            $body .= '<strong style="font-size: 15px;">' . htmlspecialchars($campo) . '</strong><br>';
-            $body .= '<span class="badge badge-old">Antigo: ' . htmlspecialchars($valores['antigo']) . '</span> ';
-            $body .= '→ ';
-            $body .= '<span class="badge badge-new">Novo: ' . htmlspecialchars($valores['novo']) . '</span>';
-            $body .= '</div>';
-        }
-        $body .= '</div>';
-    } else {
-        $body .= '<div class="no-changes">
-                    <p style="font-size: 16px;">✅ Nenhuma alteração de valor detectada</p>
-                    <p><em>Apenas campos de data/hora foram atualizados automaticamente.</em></p>
-                  </div>';
-    }
-    
-    // Tabela de comparação completa
-    $body .= '
-            <h2>📊 Comparação Completa dos Valores</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th width="25%">Campo</th>
-                        <th width="37%" style="background-color: #f8d7da;">Valor Antigo</th>
-                        <th width="37%" style="background-color: #d4edda;">Valor Novo</th>
-                    </tr>
-                </thead>
-                <tbody>';
-    
-    // Lista de campos para comparar
-    $camposParaComparar = [
-        'Localidade' => 'Localidade',
-        'Suites' => 'Suítes',
-        'WCTotal' => 'Banheiros Total',
-        'VagasGaragem' => 'Vagas Garagem',
-        'TipoGaragem' => 'Tipo Garagem',
-        'ValorCond' => 'Valor Condomínio',
-        'ValorIPTU' => 'Valor IPTU',
-        'MetragemMin' => 'Metragem Mínima (m²)',
-        'MetragemMax' => 'Metragem Máxima (m²)',
-        'Tipologia' => 'Tipologia',
-        'Descricao' => 'Descrição',
-        'Entregue' => 'Entregue',
-        'Vendido' => 'Vendido',
-        'Ocultar' => 'Ocultar',
-        'MesEntrega' => 'Mês Entrega',
-        'AnoEntrega' => 'Ano Entrega',
-        'ProximoMar' => 'Distância do Mar (m)',
-        'Pavimentos' => 'Pavimentos',
-        'QTD_Blocos' => 'Qtd. Blocos',
-        'QTD_Unidades' => 'Qtd. Unidades'
-    ];
-    
-    foreach ($camposParaComparar as $campo => $label) {
-        $antigo = isset($dadosAntigos[$campo]) ? $dadosAntigos[$campo] : '';
-        $novo = isset($dadosNovos[$campo]) ? $dadosNovos[$campo] : '';
-        
-        // Verificar se é um campo que foi enviado no POST
-        if (!array_key_exists($campo, $dadosNovos) && $campo != 'DataAtualizacao' && $campo != 'UsuarioAtu') {
-            $novo = $antigo; // Mantém o valor antigo se não foi alterado
-        }
-        
-        // Formatando valores booleanos
-        if (in_array($campo, ['Entregue', 'Vendido', 'Ocultar'])) {
-            $antigo = $antigo ? '✅ SIM' : '❌ NÃO';
-            $novo = $novo ? '✅ SIM' : '❌ NÃO';
-        }
-        
-        // Formatando valores monetários
-        if (in_array($campo, ['ValorCond', 'ValorIPTU'])) {
-            if (is_numeric($antigo)) {
-                $antigo = 'R$ ' . number_format(floatval($antigo), 2, ',', '.');
-            }
-            if (is_numeric($novo)) {
-                $novo = 'R$ ' . number_format(floatval($novo), 2, ',', '.');
-            }
-        }
-        
-        // Formatando datas
-        if ($campo == 'DataEntrega' && !empty($antigo) && $antigo != '2035-01-01') {
-            $antigo = date('d/m/Y', strtotime($antigo));
-        }
-        if ($campo == 'DataEntrega' && !empty($novo) && $novo != '2035-01-01') {
-            $novo = date('d/m/Y', strtotime($novo));
-        }
-        
-        // Formatando meses
-        if ($campo == 'MesEntrega' && !empty($antigo)) {
-            $meses = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-            $antigo = isset($meses[$antigo]) ? $meses[$antigo] . " ($antigo)" : $antigo;
-        }
-        if ($campo == 'MesEntrega' && !empty($novo)) {
-            $meses = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-            $novo = isset($meses[$novo]) ? $meses[$novo] . " ($novo)" : $novo;
-        }
-        
-        // Verificar se houve alteração
-        $alterado = ($antigo != $novo);
-        $rowClass = $alterado ? 'class="changed-field"' : '';
-        
-        $body .= '
-                <tr ' . $rowClass . '>
-                    <td><strong>' . $label . '</strong></td>
-                    <td style="background-color: ' . ($alterado ? '#f8d7da' : 'transparent') . ';">' . htmlspecialchars($antigo) . '</td>
-                    <td style="background-color: ' . ($alterado ? '#d4edda' : 'transparent') . ';">' . htmlspecialchars($novo) . '</td>
-                </tr>';
-    }
-    
-    // Adicionar comodidades alteradas
-    $camposBooleanos = [
-        'BeiraMar', 'RoofTop', 'Academia', 'Sauna', 'PetPlace', 'EspacoGourmet',
-        'Restaurante', 'Coworking', 'QuadraTenis', 'Emporio', 'Piscina2', 'Spa',
-        'Recepcao24h', 'LoungeBar', 'Brinquedoteca', 'Varanda', 'VarandaGourmet',
-        'Salaojogos', 'GestoraAluguel', 'Lavanderia', 'Bicicletario', 'Hidromassagem',
-        'GasEncanado', 'PiscinaPrivativa', 'FechaduraEletronica'
-    ];
-    
-    $comodidadesAlteradas = [];
-    foreach ($camposBooleanos as $campo) {
-        $antigo = isset($dadosAntigos[$campo]) ? $dadosAntigos[$campo] : 0;
-        $novo = isset($dadosNovos[$campo]) ? $dadosNovos[$campo] : 0;
-        
-        if ($antigo != $novo) {
-            $comodidadesAlteradas[] = [
-                'nome' => str_replace(['_', '2'], [' ', ''], $campo),
-                'antigo' => $antigo ? '✅ Ativo' : '❌ Inativo',
-                'novo' => $novo ? '✅ Ativo' : '❌ Inativo'
-            ];
-        }
-    }
-    
-    if (!empty($comodidadesAlteradas)) {
-        $body .= '
-                <tr>
-                    <td colspan="3" style="background-color: #e7f1ff; padding: 15px; text-align: center;">
-                        <strong>🏊 Comodidades Alteradas</strong>
-                    </td>
-                </tr>';
-        
-        foreach ($comodidadesAlteradas as $comodidade) {
-            $body .= '
-                <tr class="changed-field">
-                    <td><em>' . $comodidade['nome'] . '</em></td>
-                    <td style="background-color: #f8d7da;">' . $comodidade['antigo'] . '</td>
-                    <td style="background-color: #d4edda;">' . $comodidade['novo'] . '</td>
-                </tr>';
-        }
-    }
-    
-    $body .= '
-                </tbody>
-            </table>
-            
-            <h2>🔧 SQL Executado</h2>
-            <div class="sql-box">
-                <pre style="margin: 0;">' . htmlspecialchars($sql) . '</pre>
-            </div>
-            
-            <div class="timestamp">
-                <p><strong>📧 Este email foi gerado automaticamente pelo sistema SunnyImob.</strong></p>
-                <p>⚠️ Não responda a este email. Em caso de dúvidas, entre em contato com o administrador do sistema.</p>
-                <p>🛡️ Registro de auditoria para controle de alterações.</p>
-                
-                <div style="margin-top: 25px; text-align: center;">
-                    <a href="https://seusistema.com.br/admin/empreendimento.php?id=' . $empreendimentoId . '" class="btn">🔗 Acessar Empreendimento no Sistema</a>
-                </div>
-                
-                <div style="margin-top: 20px; font-size: 12px; color: #999; text-align: center;">
-                    <p>Sistema SunnyImob &copy; ' . date('Y') . ' - Todos os direitos reservados</p>
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>';
-    
-    // Enviar email
-    return mail($to, $subject, $body, $headers);
-}
-
-// ==================== VERIFICAÇÃO DE LOGIN ====================
+// Login
 if (empty($_SESSION['Usuario'])) {
     header("Location: login_p1.php");
     exit();
 }
 
-// ==================== OBTER ID DO EMPREENDIMENTO ====================
-$id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+// Conexão
+if (isset($conn) && $conn instanceof PDO)      $db = $conn;
+elseif (isset($pdo) && $pdo instanceof PDO)    $db = $pdo;
+else die("Erro: conexão com o banco não encontrada.");
 
-// ==================== BUSCAR DADOS ANTIGOS ====================
-try {
-    $stmt = $pdo->prepare("SELECT * FROM empreendimento WHERE Empreend_ID = :id");
-    $stmt->execute([':id' => $id]);
-    $dadosAntigos = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$dadosAntigos) {
-        die("Empreendimento não encontrado");
+// Tema seguro
+$themeDefaults = [
+    'primary' => '#800000', 'primary_dark' => '#4B0C1D',
+    'secondary' => '#6c757d', 'accent' => '#ffc107',
+    'bg_body' => '#f0f2f5', 'text_color' => '#1a1a2e',
+    'card_bg' => '#ffffff', 'shadow_color' => '#1a1a2e',
+    'btn_bg' => '#800000', 'btn_hover' => '#4B0C1D', 'btn_text' => '#ffffff',
+];
+$themeSafe = array_merge($themeDefaults, isset($theme) && is_array($theme) ? $theme : []);
+
+// ==================== FUNÇÕES AUXILIARES ====================
+function usuarioPodeEditar() {
+    return isset($_SESSION['Usuario']) && !empty($_SESSION['Usuario']);
+}
+function getCheckboxValue($valor) { return ($valor == "on" || $valor === true || $valor === 1) ? 1 : 0; }
+function formatarMoedaExibicao($valor) {
+    if ($valor === null || $valor === '' || !is_numeric($valor)) return '0,00';
+    return number_format((float)$valor, 2, ',', '.');
+}
+function formatarBytes($bytes) {
+    if ($bytes >= 1048576) return number_format($bytes / 1048576, 2, ',', '.') . ' MB';
+    if ($bytes >= 1024)    return number_format($bytes / 1024, 1, ',', '.') . ' KB';
+    return $bytes . ' B';
+}
+
+// ==================== CSRF ====================
+if (empty($_SESSION['csrf_carac'])) {
+    $_SESSION['csrf_carac'] = bin2hex(random_bytes(32));
+}
+$csrfToken = $_SESSION['csrf_carac'];
+
+// ==================== EMAIL ====================
+function enviarEmailAtualizacao($empreendimentoId, $nomeEmp, $empresa, $usuario, $alteracoes) {
+    $to = "valterpb@gmail.com, valterpb@hotmail.com";
+    $subject = "[SI-CARAC] " . $nomeEmp . " - ID: " . $empreendimentoId;
+
+    $headers  = "From: sendmail@gabnetweb.com.br\r\n";
+    $headers .= "Reply-To: sendmail@gabnetweb.com.br\r\n";
+    $headers .= "MIME-Version: 1.0\r\n";
+    $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+
+    $rows = '';
+    foreach ($alteracoes as $campo => $v) {
+        $rows .= '<tr><td style="padding:8px;border:1px solid #ddd;"><b>' . htmlspecialchars($campo) . '</b></td>'
+              .  '<td style="padding:8px;border:1px solid #ddd;background:#f8d7da;">' . htmlspecialchars($v['antigo']) . '</td>'
+              .  '<td style="padding:8px;border:1px solid #ddd;background:#d4edda;">' . htmlspecialchars($v['novo']) . '</td></tr>';
     }
-} catch(PDOException $e) {
-    die("Erro ao buscar empreendimento: " . $e->getMessage());
+
+    $body = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+        body{font-family:Arial,sans-serif;background:#f4f4f4;padding:20px;}
+        .container{background:white;padding:25px;border-radius:8px;max-width:900px;margin:auto;}
+        h1{background:#800000;color:white;padding:15px;border-radius:5px;font-size:18px;margin:0 0 20px;}
+        table{width:100%;border-collapse:collapse;font-size:13px;}
+        th{background:#800000;color:white;padding:10px;text-align:left;}
+        .info{background:#f8f9fa;border-left:4px solid #007bff;padding:12px;margin:15px 0;}
+    </style></head><body><div class="container">
+        <h1>📋 Atualização de Características</h1>
+        <div class="info">
+            <p><b>ID:</b> ' . $empreendimentoId . ' &nbsp;|&nbsp; <b>Nome:</b> ' . htmlspecialchars($nomeEmp) . '</p>
+            <p><b>Empresa:</b> ' . htmlspecialchars($empresa) . ' &nbsp;|&nbsp; <b>Usuário:</b> ' . htmlspecialchars($usuario) . '</p>
+            <p><b>IP:</b> ' . ($_SERVER['REMOTE_ADDR'] ?? 'N/A') . ' &nbsp;|&nbsp; <b>Data:</b> ' . date('d/m/Y H:i:s') . '</p>
+        </div>
+        <h3>🔍 ' . count($alteracoes) . ' campo(s) alterado(s)</h3>
+        <table><thead><tr><th>Campo</th><th>Antigo</th><th>Novo</th></tr></thead><tbody>' . $rows . '</tbody></table>
+        <p style="color:#999;font-size:12px;margin-top:20px;text-align:center;">SunnyImob &copy; ' . date('Y') . '</p>
+    </div></body></html>';
+
+    return @mail($to, $subject, $body, $headers);
+}
+
+// ==================== ID ====================
+$id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+if ($id <= 0) die("ID inválido.");
+
+// ==================== BUSCAR EMPREENDIMENTO ====================
+function buscarEmpreendimento($db, $id) {
+    $stmt = $db->prepare("
+        SELECT e.*, COALESCE(emp.NomeEmpresa, '—') AS NomeEmpresa
+        FROM empreendimento e
+        LEFT JOIN empresa emp ON e.Empresa_Id = emp.Empresa_Id
+        WHERE e.Empreend_ID = :id
+    ");
+    $stmt->execute([':id' => $id]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}
+
+try {
+    $dadosAntigos = buscarEmpreendimento($db, $id);
+    if (!$dadosAntigos) die("Empreendimento não encontrado.");
+} catch (PDOException $e) {
+    die("Erro: " . $e->getMessage());
 }
 
 // ==================== PROCESSAR POST ====================
+$mensagem = null; $tipoMensagem = null; $emailEnviado = false;
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Arrays para armazenar alterações e dados novos
-    $alteracoesDetectadas = [];
-    $dadosNovos = [];
-    
-    // Sanitizar inputs
-    $localidade = isset($_POST['Localidade']) ? strtoupper(trim($_POST['Localidade'])) : '';
-    $suites = isset($_POST['Suites']) ? intval($_POST['Suites']) : null;
-    $wcTotal = isset($_POST['WCTotal']) ? intval($_POST['WCTotal']) : null;
-    $dataEntrega = isset($_POST['DataEntrega']) ? trim($_POST['DataEntrega']) : '';
-    $vagasGaragem = isset($_POST['VagasGaragem']) ? intval($_POST['VagasGaragem']) : null;
-    $tipoGaragem = isset($_POST['TipoGaragem']) ? trim($_POST['TipoGaragem']) : '';
-    $valorCond = isset($_POST['ValorCond']) ? trim($_POST['ValorCond']) : '';
-    $valorIPTU = isset($_POST['ValorIPTU']) ? trim($_POST['ValorIPTU']) : '';
-    $metragemMin = isset($_POST['MetragemMin']) ? trim($_POST['MetragemMin']) : '';
-    $metragemMax = isset($_POST['MetragemMax']) ? trim($_POST['MetragemMax']) : '';
-    $tipologia = isset($_POST['Tipologia']) ? strtoupper(trim($_POST['Tipologia'])) : '';
-    $descricao = isset($_POST['Descricao']) ? strtoupper(trim($_POST['Descricao'])) : '';
-    $mesEntrega = isset($_POST['MesEntrega']) ? intval($_POST['MesEntrega']) : null;
-    $anoEntrega = isset($_POST['AnoEntrega']) ? intval($_POST['AnoEntrega']) : null;
-    $proximoMar = isset($_POST['ProximoMar']) ? intval($_POST['ProximoMar']) : null;
-    $pavimentos = isset($_POST['Pavimentos']) ? intval($_POST['Pavimentos']) : null;
-    $qtdBlocos = isset($_POST['QTD_Blocos']) ? intval($_POST['QTD_Blocos']) : 0;
-    $qtdUnidades = isset($_POST['QTD_Unidades']) ? intval($_POST['QTD_Unidades']) : 0;
-    $menorPreco = isset($_POST['MenorPreco']) ? trim($_POST['MenorPreco']) : '';
-    $maiorPreco = isset($_POST['MaiorPreco']) ? trim($_POST['MaiorPreco']) : '';
-    
-    // Campos booleanos
-    $camposBooleanos = [
-        'BeiraMar', 'RoofTop', 'Academia', 'Sauna', 'PetPlace', 'EspacoGourmet',
-        'Restaurante', 'Coworking', 'QuadraTenis', 'Emporio', 'Piscina2', 'Spa',
-        'Recepcao24h', 'LoungeBar', 'Brinquedoteca', 'Varanda', 'VarandaGourmet',
-        'Salaojogos', 'Entregue', 'Vendido', 'Ocultar', 'GestoraAluguel',
-        'Lavanderia', 'Bicicletario', 'Hidromassagem', 'GasEncanado',
-        'PiscinaPrivativa', 'FechaduraEletronica'
-    ];
-    
-    // Preparar dados para UPDATE
-    $setClauses = [];
-    $params = [];
-    $alteracoes = [];
-    
-    // ==================== COMPARAR CAMPOS ====================
-    
-    // Localidade
-    if (!empty($localidade) && $localidade != 'X') {
-        if ($dadosAntigos['Localidade'] != $localidade) {
-            $alteracoes['Localidade'] = [
-                'antigo' => $dadosAntigos['Localidade'] ?? '',
-                'novo' => $localidade
-            ];
-        }
-        $setClauses[] = "Localidade = :localidade";
-        $params[':localidade'] = $localidade;
-        $dadosNovos['Localidade'] = $localidade;
-    }
-    
-    // Suites
-    if (!is_null($suites) && $suites > 0) {
-        if ($dadosAntigos['Suites'] != $suites) {
-            $alteracoes['Suites'] = [
-                'antigo' => $dadosAntigos['Suites'] ?? '',
-                'novo' => $suites
-            ];
-        }
-        $setClauses[] = "Suites = :suites";
-        $params[':suites'] = $suites;
-        $dadosNovos['Suites'] = $suites;
-    }
-    
-    // WCTotal
-    if (!is_null($wcTotal) && $wcTotal > 0) {
-        if ($dadosAntigos['WCTotal'] != $wcTotal) {
-            $alteracoes['WCTotal'] = [
-                'antigo' => $dadosAntigos['WCTotal'] ?? '',
-                'novo' => $wcTotal
-            ];
-        }
-        $setClauses[] = "WCTotal = :wctotal";
-        $params[':wctotal'] = $wcTotal;
-        $dadosNovos['WCTotal'] = $wcTotal;
-    }
-    
-    // DataEntrega
-    if (!empty($dataEntrega) && $dataEntrega != '2035-01-01') {
-        if ($dadosAntigos['DataEntrega'] != $dataEntrega) {
-            $alteracoes['DataEntrega'] = [
-                'antigo' => $dadosAntigos['DataEntrega'] ?? '',
-                'novo' => $dataEntrega
-            ];
-        }
-        $setClauses[] = "DataEntrega = :data_entrega";
-        $params[':data_entrega'] = $dataEntrega;
-        $dadosNovos['DataEntrega'] = $dataEntrega;
-    }
-    
-    // TipoGaragem
-    if (!empty($tipoGaragem)) {
-        if ($dadosAntigos['TipoGaragem'] != $tipoGaragem) {
-            $alteracoes['TipoGaragem'] = [
-                'antigo' => $dadosAntigos['TipoGaragem'] ?? '',
-                'novo' => $tipoGaragem
-            ];
-        }
-        $setClauses[] = "TipoGaragem = :tipo_garagem";
-        $params[':tipo_garagem'] = $tipoGaragem;
-        $dadosNovos['TipoGaragem'] = $tipoGaragem;
-    }
-    
-    // VagasGaragem
-    if (!is_null($vagasGaragem) && $vagasGaragem > 0) {
-        if ($dadosAntigos['VagasGaragem'] != $vagasGaragem) {
-            $alteracoes['VagasGaragem'] = [
-                'antigo' => $dadosAntigos['VagasGaragem'] ?? '',
-                'novo' => $vagasGaragem
-            ];
-        }
-        $setClauses[] = "VagasGaragem = :vagas_garagem";
-        $params[':vagas_garagem'] = $vagasGaragem;
-        $dadosNovos['VagasGaragem'] = $vagasGaragem;
-    }
-    
-    // Tratar valores monetários
-    if (!empty($valorCond)) {
-      //  $valorCondFormatado = formatarParaDecimalPonto($valorCond);
-      $valorCondFormatado = $valorCond;
-        if ($dadosAntigos['ValorCond'] != $valorCondFormatado) {
-            $alteracoes['ValorCond'] = [
-                'antigo' => $dadosAntigos['ValorCond'] ?? '',
-                'novo' => $valorCondFormatado
-            ];
-        }
-        $setClauses[] = "ValorCond = :valor_cond";
-        $params[':valor_cond'] = $valorCondFormatado;
-        $dadosNovos['ValorCond'] = $valorCondFormatado;
-    }
-    
-    if (!empty($valorIPTU)) {
-      //  $valorIPTUFormatado = formatarParaDecimalPonto($valorIPTU);
-      $valorIPTUFormatado = $valorIPTU;
-        if ($dadosAntigos['ValorIPTU'] != $valorIPTUFormatado) {
-            $alteracoes['ValorIPTU'] = [
-                'antigo' => $dadosAntigos['ValorIPTU'] ?? '',
-                'novo' => $valorIPTUFormatado
-            ];
-        }
-        $setClauses[] = "ValorIPTU = :valor_iptu";
-        $params[':valor_iptu'] = $valorIPTUFormatado;
-        $dadosNovos['ValorIPTU'] = $valorIPTUFormatado;
-    }
-    
-    if (!empty($menorPreco)) {
-      //  $menorPrecoFormatado = formatarParaDecimalPonto($menorPreco);
-      $menorPrecoFormatado = $menorPreco;
-        if ($dadosAntigos['MenorPreco'] != $menorPrecoFormatado) {
-            $alteracoes['MenorPreco'] = [
-                'antigo' => $dadosAntigos['MenorPreco'] ?? '',
-                'novo' => $menorPrecoFormatado
-            ];
-        }
-        $setClauses[] = "MenorPreco = :menor_preco";
-        $params[':menor_preco'] = $menorPrecoFormatado;
-        $dadosNovos['MenorPreco'] = $menorPrecoFormatado;
-    }
-    
-    if (!empty($maiorPreco)) {
-       // $maiorPrecoFormatado = formatarParaDecimalPonto($maiorPreco);
-       $maiorPrecoFormatado = $maiorPreco;
-        if ($dadosAntigos['MaiorPreco'] != $maiorPrecoFormatado) {
-            $alteracoes['MaiorPreco'] = [
-                'antigo' => $dadosAntigos['MaiorPreco'] ?? '',
-                'novo' => $maiorPrecoFormatado
-            ];
-        }
-        $setClauses[] = "MaiorPreco = :maior_preco";
-        $params[':maior_preco'] = $maiorPrecoFormatado;
-        $dadosNovos['MaiorPreco'] = $maiorPrecoFormatado;
-    }
-    
-    // Metragens
-    if (!empty($metragemMin)) {
-        $metragemMinFormatada = str_replace(',', '.', $metragemMin);
-        if ($dadosAntigos['MetragemMin'] != $metragemMinFormatada) {
-            $alteracoes['MetragemMin'] = [
-                'antigo' => $dadosAntigos['MetragemMin'] ?? '',
-                'novo' => $metragemMinFormatada
-            ];
-        }
-        $setClauses[] = "MetragemMin = :metragem_min";
-        $params[':metragem_min'] = $metragemMinFormatada;
-        $dadosNovos['MetragemMin'] = $metragemMinFormatada;
-    }
-    
-    if (!empty($metragemMax)) {
-        $metragemMaxFormatada = str_replace(',', '.', $metragemMax);
-        if ($dadosAntigos['MetragemMax'] != $metragemMaxFormatada) {
-            $alteracoes['MetragemMax'] = [
-                'antigo' => $dadosAntigos['MetragemMax'] ?? '',
-                'novo' => $metragemMaxFormatada
-            ];
-        }
-        $setClauses[] = "MetragemMax = :metragem_max";
-        $params[':metragem_max'] = $metragemMaxFormatada;
-        $dadosNovos['MetragemMax'] = $metragemMaxFormatada;
-    }
-    
-    // Tipologia
-    if (!empty($tipologia)) {
-        if ($dadosAntigos['Tipologia'] != $tipologia) {
-            $alteracoes['Tipologia'] = [
-                'antigo' => $dadosAntigos['Tipologia'] ?? '',
-                'novo' => $tipologia
-            ];
-        }
-        $setClauses[] = "Tipologia = :tipologia";
-        $params[':tipologia'] = $tipologia;
-        $dadosNovos['Tipologia'] = $tipologia;
-    }
-    
-    // Descrição
-    if (!empty($descricao)) {
-        if ($dadosAntigos['Descricao'] != $descricao) {
-            $alteracoes['Descricao'] = [
-                'antigo' => $dadosAntigos['Descricao'] ?? '',
-                'novo' => $descricao
-            ];
-        }
-        $setClauses[] = "Descricao = :descricao";
-        $params[':descricao'] = $descricao;
-        $dadosNovos['Descricao'] = $descricao;
-    }
-    
-    // MesEntrega
-    if (!is_null($mesEntrega) && $mesEntrega > 0) {
-        if ($dadosAntigos['MesEntrega'] != $mesEntrega) {
-            $alteracoes['MesEntrega'] = [
-                'antigo' => $dadosAntigos['MesEntrega'] ?? '',
-                'novo' => $mesEntrega
-            ];
-        }
-        $setClauses[] = "MesEntrega = :mes_entrega";
-        $params[':mes_entrega'] = $mesEntrega;
-        $dadosNovos['MesEntrega'] = $mesEntrega;
-    }
-    
-    // AnoEntrega
-    if (!is_null($anoEntrega) && $anoEntrega > 0) {
-        if ($dadosAntigos['AnoEntrega'] != $anoEntrega) {
-            $alteracoes['AnoEntrega'] = [
-                'antigo' => $dadosAntigos['AnoEntrega'] ?? '',
-                'novo' => $anoEntrega
-            ];
-        }
-        $setClauses[] = "AnoEntrega = :ano_entrega";
-        $params[':ano_entrega'] = $anoEntrega;
-        $dadosNovos['AnoEntrega'] = $anoEntrega;
-    }
-    
-    // ProximoMar
-    if (!is_null($proximoMar) && $proximoMar > 0) {
-        if ($dadosAntigos['ProximoMar'] != $proximoMar) {
-            $alteracoes['ProximoMar'] = [
-                'antigo' => $dadosAntigos['ProximoMar'] ?? '',
-                'novo' => $proximoMar
-            ];
-        }
-        $setClauses[] = "ProximoMar = :proximo_mar";
-        $params[':proximo_mar'] = $proximoMar;
-        $dadosNovos['ProximoMar'] = $proximoMar;
-    }
-    
-    // Pavimentos
-    if (!is_null($pavimentos) && $pavimentos > 0) {
-        if ($dadosAntigos['Pavimentos'] != $pavimentos) {
-            $alteracoes['Pavimentos'] = [
-                'antigo' => $dadosAntigos['Pavimentos'] ?? '',
-                'novo' => $pavimentos
-            ];
-        }
-        $setClauses[] = "Pavimentos = :pavimentos";
-        $params[':pavimentos'] = $pavimentos;
-        $dadosNovos['Pavimentos'] = $pavimentos;
-    }
-    
-    // QTD_Blocos
-    if ($qtdBlocos > 0) {
-        if ($dadosAntigos['QTD_Blocos'] != $qtdBlocos) {
-            $alteracoes['QTD_Blocos'] = [
-                'antigo' => $dadosAntigos['QTD_Blocos'] ?? '',
-                'novo' => $qtdBlocos
-            ];
-        }
-        $setClauses[] = "QTD_Blocos = :qtd_blocos";
-        $params[':qtd_blocos'] = $qtdBlocos;
-        $dadosNovos['QTD_Blocos'] = $qtdBlocos;
-    }
-    
-    // QTD_Unidades
-    if ($qtdUnidades > 0) {
-        if ($dadosAntigos['QTD_Unidades'] != $qtdUnidades) {
-            $alteracoes['QTD_Unidades'] = [
-                'antigo' => $dadosAntigos['QTD_Unidades'] ?? '',
-                'novo' => $qtdUnidades
-            ];
-        }
-        $setClauses[] = "QTD_Unidades = :qtd_unidades";
-        $params[':qtd_unidades'] = $qtdUnidades;
-        $dadosNovos['QTD_Unidades'] = $qtdUnidades;
-    }
-    
-    // Adicionar campos booleanos
-    foreach ($camposBooleanos as $campo) {
-        $valor = isset($_POST[$campo]) ? getCheckboxValue($_POST[$campo]) : 0;
-        $valorAntigo = $dadosAntigos[$campo] ?? 0;
-        
-        if ($valor != $valorAntigo) {
-            $alteracoes[$campo] = [
-                'antigo' => $valorAntigo ? 'Sim' : 'Não',
-                'novo' => $valor ? 'Sim' : 'Não'
-            ];
-        }
-        
-        $setClauses[] = "$campo = :$campo";
-        $params[":$campo"] = $valor;
-        $dadosNovos[$campo] = $valor;
-    }
-    
-    // Campos adicionais (sempre atualizados)
-    $setClauses[] = "DataAtualizacao = NOW()";
-    $setClauses[] = "UsuarioAtu = :usuario_atu";
-    $params[':usuario_atu'] = $_SESSION['Usuario'];
-    $dadosNovos['DataAtualizacao'] = date('Y-m-d H:i:s');
-    $dadosNovos['UsuarioAtu'] = $_SESSION['Usuario'];
-    
-    // ==================== EXECUTAR UPDATE ====================
-    if (!empty($setClauses)) {
-        try {
-            $sql = "UPDATE empreendimento SET " . implode(', ', $setClauses) . " WHERE Empreend_ID = :id";
-            $params[':id'] = $id;
-            
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
-            
-            // ==================== ENVIAR EMAIL DE NOTIFICAÇÃO ====================
-            $nomeEmpreendimento = $dadosAntigos['NomeEmpreendimento'];
-            $usuario = $_SESSION['Usuario'];
-            
-            // Verificar se não é localhost para enviar email
-            $remote_addr = $_SERVER['REMOTE_ADDR'] ?? '';
-            if ($remote_addr !== '127.0.0.1' && $remote_addr !== '::1') {
-                $emailEnviado = enviarEmailAtualizacao(
-                    $id,
-                    $nomeEmpreendimento,
-                    $usuario,
-                    $alteracoes,
-                    $sql,
-                    $dadosAntigos,
-                    $dadosNovos
-                );
-                
-                $_SESSION['mensagem'] = "✅ Dados atualizados com sucesso!" . ($emailEnviado ? " Email de notificação enviado." : " Falha no envio do email.");
-                $_SESSION['tipo_mensagem'] = "success";
-            } else {
-                // Em ambiente local, apenas mostrar mensagem de sucesso
-                $_SESSION['mensagem'] = "✅ Dados atualizados com sucesso! (Ambiente local - Email não enviado)";
-                $_SESSION['tipo_mensagem'] = "success";
+
+    // CSRF
+    if (!hash_equals($_SESSION['csrf_carac'] ?? '', $_POST['csrf_token'] ?? '')) {
+        $mensagem = "❌ Token de segurança inválido. Recarregue a página.";
+        $tipoMensagem = "danger";
+    } else {
+        $alteracoes = [];
+        $setClauses = [];
+        $params = [];
+
+        $addCampo = function($campo, $valor, $label) use (&$alteracoes, &$setClauses, &$params, $dadosAntigos) {
+            $antigo = $dadosAntigos[$campo] ?? null;
+            if ($antigo != $valor) {
+                $alteracoes[$label] = ['antigo' => $antigo ?? '(vazio)', 'novo' => $valor ?? '(vazio)'];
             }
-            
-            // Registrar histórico (implemente conforme necessário)
-            // registrarHistorico($id, $_POST['idEmpresa'], "Atualização das Características");
-            
-        } catch(PDOException $e) {
-            $_SESSION['mensagem'] = "❌ Erro ao atualizar: " . $e->getMessage();
-            $_SESSION['tipo_mensagem'] = "danger";
+            $setClauses[] = "$campo = :$campo";
+            $params[":$campo"] = $valor;
+        };
+
+        // ==================== CAMPOS DE TEXTO ====================
+        $localidade  = strtoupper(trim($_POST['Localidade'] ?? ''));
+        $tipologia   = strtoupper(trim($_POST['Tipologia'] ?? ''));
+        $descricao   = strtoupper(trim($_POST['Descricao'] ?? ''));
+        $tipoGaragem = trim($_POST['TipoGaragem'] ?? '');
+
+        if (!empty($localidade) && $localidade != 'X') $addCampo('Localidade', $localidade, 'Localidade');
+        if (!empty($tipologia))                        $addCampo('Tipologia', $tipologia, 'Tipologia');
+        if (!empty($descricao))                        $addCampo('Descricao', $descricao, 'Descrição');
+        if (!empty($tipoGaragem))                      $addCampo('TipoGaragem', $tipoGaragem, 'Tipo Garagem');
+
+        // ==================== CAMPOS NUMÉRICOS ====================
+        $numericos = [
+            'Suites' => 'Suítes', 'WCTotal' => 'Banheiros',
+            'VagasGaragem' => 'Vagas Garagem', 'ProximoMar' => 'Dist. Mar (m)',
+            'Pavimentos' => 'Pavimentos', 'QTD_Blocos' => 'Qtd. Blocos',
+            'QTD_Unidades' => 'Qtd. Unidades', 'MesEntrega' => 'Mês Entrega',
+            'AnoEntrega' => 'Ano Entrega',
+        ];
+        foreach ($numericos as $campo => $label) {
+            if (isset($_POST[$campo]) && $_POST[$campo] !== '') {
+                $addCampo($campo, intval($_POST[$campo]), $label);
+            }
+        }
+
+        // ==================== MOEDA / METRAGEM ====================
+        $moedas = [
+            'ValorCond' => 'Valor Cond.', 'ValorIPTU' => 'Valor IPTU',
+            'MenorPreco' => 'Menor Preço', 'MaiorPreco' => 'Maior Preço',
+            'MetragemMin' => 'Metragem Mín.', 'MetragemMax' => 'Metragem Máx.',
+        ];
+        foreach ($moedas as $campo => $label) {
+            if (!empty($_POST[$campo])) {
+                $v = str_replace(['.', ','], ['', '.'], trim($_POST[$campo]));
+                $addCampo($campo, $v, $label);
+            }
+        }
+
+        if (!empty($_POST['DataEntrega']) && $_POST['DataEntrega'] != '2035-01-01') {
+            $addCampo('DataEntrega', $_POST['DataEntrega'], 'Data Entrega');
+        }
+
+        // ==================== BOOLEANOS ====================
+        $camposBooleanos = [
+            'BeiraMar' => 'Beira Mar', 'RoofTop' => 'RoofTop', 'Academia' => 'Academia',
+            'Sauna' => 'Sauna', 'PetPlace' => 'Pet Place', 'EspacoGourmet' => 'Espaço Gourmet',
+            'Restaurante' => 'Restaurante', 'Coworking' => 'Coworking', 'QuadraTenis' => 'Quadra Tênis',
+            'Emporio' => 'Empório', 'Piscina2' => 'Piscina', 'Spa' => 'Spa',
+            'Recepcao24h' => 'Recepção 24h', 'LoungeBar' => 'Lounge Bar',
+            'Brinquedoteca' => 'Brinquedoteca', 'Varanda' => 'Varanda',
+            'VarandaGourmet' => 'Varanda Gourmet', 'Salaojogos' => 'Sala de Jogos',
+            'Entregue' => 'Entregue', 'Vendido' => 'Vendido', 'Ocultar' => 'Ocultar',
+            'GestoraAluguel' => 'Gestora Aluguel', 'Lavanderia' => 'Lavanderia',
+            'Bicicletario' => 'Bicicletário', 'Hidromassagem' => 'Hidromassagem',
+            'GasEncanado' => 'Gás Encanado', 'PiscinaPrivativa' => 'Piscina Privativa',
+            'FechaduraEletronica' => 'Fechadura Eletrônica',
+        ];
+        foreach ($camposBooleanos as $campo => $label) {
+            $valor = isset($_POST[$campo]) ? getCheckboxValue($_POST[$campo]) : 0;
+            $antigo = (int)($dadosAntigos[$campo] ?? 0);
+            if ($valor != $antigo) {
+                $alteracoes[$label] = ['antigo' => $antigo ? 'Sim' : 'Não', 'novo' => $valor ? 'Sim' : 'Não'];
+            }
+            $setClauses[] = "$campo = :$campo";
+            $params[":$campo"] = $valor;
+        }
+
+        // ==================== UPLOAD DO CARD ====================
+        $cardDir  = __DIR__ . '/card';
+        $cardFile = $cardDir . '/' . $id . '.jpg';
+
+        if (!is_dir($cardDir)) {
+            @mkdir($cardDir, 0755, true);
+        }
+
+        // --- Remover imagem ---
+        if (!empty($_POST['remover_card']) && $_POST['remover_card'] === '1') {
+            if (file_exists($cardFile)) {
+                if (@unlink($cardFile)) {
+                    $alteracoes['Imagem do Card'] = ['antigo' => 'existia', 'novo' => 'removida'];
+                } else {
+                    $mensagem = "❌ Não foi possível remover a imagem (verifique permissões em /card).";
+                    $tipoMensagem = "danger";
+                }
+            }
+        }
+
+        // --- Upload de nova imagem ---
+        if (!empty($_FILES['card_image']['name']) && $_FILES['card_image']['error'] === UPLOAD_ERR_OK) {
+            $file = $_FILES['card_image'];
+            $maxBytes = 5 * 1024 * 1024;
+
+            if ($file['size'] > $maxBytes) {
+                $mensagem = "❌ Imagem muito grande (" . formatarBytes($file['size']) . "). Máx 5 MB.";
+                $tipoMensagem = "danger";
+            } else {
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mime = finfo_file($finfo, $file['tmp_name']);
+                finfo_close($finfo);
+
+                $allowed = ['image/jpeg', 'image/png', 'image/webp'];
+
+                if (!in_array($mime, $allowed)) {
+                    $mensagem = "❌ Formato inválido. Use JPG, PNG ou WebP.";
+                    $tipoMensagem = "danger";
+                } else {
+                    $info = @getimagesize($file['tmp_name']);
+                    if (!$info) {
+                        $mensagem = "❌ Arquivo não é uma imagem válida.";
+                        $tipoMensagem = "danger";
+                    } else {
+                        $ok = false;
+                        $maxDim = 1200;
+                        $w = $info[0]; $h = $info[1];
+                        $needResize = ($w > $maxDim || $h > $maxDim);
+
+                        // JPG puro e tamanho OK → copia direto
+                        if ($mime === 'image/jpeg' && !$needResize) {
+                            if (move_uploaded_file($file['tmp_name'], $cardFile)) {
+                                $ok = true;
+                            }
+                        } else {
+                            // Converte / redimensiona via GD
+                            $src = @imagecreatefromstring(file_get_contents($file['tmp_name']));
+                            if ($src) {
+                                if ($needResize) {
+                                    $ratio = min($maxDim / $w, $maxDim / $h);
+                                    $newW = (int)round($w * $ratio);
+                                    $newH = (int)round($h * $ratio);
+                                } else {
+                                    $newW = $w;
+                                    $newH = $h;
+                                }
+                                $dst = imagecreatetruecolor($newW, $newH);
+                                $white = imagecolorallocate($dst, 255, 255, 255);
+                                imagefill($dst, 0, 0, $white); // fundo branco para PNG transparente
+                                imagecopyresampled($dst, $src, 0, 0, 0, 0, $newW, $newH, $w, $h);
+
+                                if (imagejpeg($dst, $cardFile, 88)) {
+                                    $ok = true;
+                                }
+                                imagedestroy($src);
+                                imagedestroy($dst);
+                            }
+                        }
+
+                        if ($ok) {
+                            @touch($cardFile);
+                            $alteracoes['Imagem do Card'] = [
+                                'antigo' => 'anterior',
+                                'novo'   => "nova imagem (" . formatarBytes(filesize($cardFile)) . ")"
+                            ];
+                            $mensagem = "✅ Imagem do card atualizada com sucesso!";
+                            $tipoMensagem = "success";
+                        } else {
+                            $mensagem = "❌ Falha ao processar a imagem. Verifique a extensão GD do PHP.";
+                            $tipoMensagem = "danger";
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==================== METADADOS ====================
+        $setClauses[] = "DataAtualizacao = NOW()";
+        $setClauses[] = "UsuarioAtu = :usuario_atu";
+        $params[':usuario_atu'] = $_SESSION['Usuario'];
+
+        // ==================== UPDATE ====================
+        if (!empty($setClauses)) {
+            try {
+                $sql = "UPDATE empreendimento SET " . implode(', ', $setClauses) . " WHERE Empreend_ID = :id";
+                $params[':id'] = $id;
+                $stmt = $db->prepare($sql);
+                $stmt->execute($params);
+
+                if (!empty($alteracoes)) {
+                    $remote = $_SERVER['REMOTE_ADDR'] ?? '';
+                    if ($remote !== '127.0.0.1' && $remote !== '::1') {
+                        $emailEnviado = enviarEmailAtualizacao(
+                            $id, $dadosAntigos['NomeEmpreendimento'],
+                            $dadosAntigos['NomeEmpresa'], $_SESSION['Usuario'], $alteracoes
+                        );
+                    }
+
+                    $mensagem = "✅ " . count($alteracoes) . " campo(s) atualizado(s) com sucesso!";
+                    if ($emailEnviado) $mensagem .= " Email enviado.";
+                    $tipoMensagem = $tipoMensagem ?? "success";
+                } else {
+                    $mensagem = "ℹ️ Nenhuma alteração de valor detectada.";
+                    $tipoMensagem = "info";
+                }
+
+                $dadosAntigos = buscarEmpreendimento($db, $id);
+            } catch (PDOException $e) {
+                $mensagem = "❌ Erro ao atualizar: " . $e->getMessage();
+                $tipoMensagem = "danger";
+            }
         }
     }
+
+    // Renova CSRF
+    $_SESSION['csrf_carac'] = bin2hex(random_bytes(32));
+    $csrfToken = $_SESSION['csrf_carac'];
 }
 
-// ==================== BUSCAR DADOS ATUALIZADOS ====================
-try {
-    $stmt = $pdo->prepare("SELECT * FROM empreendimento WHERE Empreend_ID = :id");
-    $stmt->execute([':id' => $id]);
-    $empreendimento = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$empreendimento) {
-        die("Empreendimento não encontrado");
-    }
-} catch(PDOException $e) {
-    die("Erro ao buscar empreendimento: " . $e->getMessage());
-}
-
-// ==================== FORMATAR VALORES PARA EXIBIÇÃO ====================
-function formatarMoedaExibicao($valor) {
-    if (empty($valor) || !is_numeric($valor)) return '0,00';
-    return number_format($valor, 2, ',', '.');
-}
-
+$empreendimento = $dadosAntigos;
 $valorCondExibicao = formatarMoedaExibicao($empreendimento['ValorCond']);
 $valorIPTUExibicao = formatarMoedaExibicao($empreendimento['ValorIPTU']);
 $menorPrecoExibicao = formatarMoedaExibicao($empreendimento['MenorPreco']);
 $maiorPrecoExibicao = formatarMoedaExibicao($empreendimento['MaiorPreco']);
+
+$qtdBlocos   = $empreendimento['QTD_Blocos']   ?? $empreendimento['Qtd_Blocos']   ?? 0;
+$qtdUnidades = $empreendimento['QTD_Unidades'] ?? $empreendimento['Qtd_Unidades'] ?? 0;
+
+// ==================== ESTADO DA IMAGEM ====================
+$cardFile = __DIR__ . '/card/' . $id . '.jpg';
+clearstatcache(true, $cardFile);
+$cardExists    = file_exists($cardFile);
+$cardTimestamp = $cardExists ? filemtime($cardFile) : 0;
+$cardSize      = $cardExists ? filesize($cardFile) : 0;
+$cardUrl       = "card/{$id}.jpg" . ($cardTimestamp ? "?v={$cardTimestamp}" : '');
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="600">
-    <title>Editar Características do Empreendimento</title>
+    <title>Editar Características — <?php echo htmlspecialchars($empreendimento['NomeEmpreendimento']); ?></title>
+
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
     <style>
-        .form-section {
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
+        :root {
+            --primary: <?php echo $themeSafe['primary']; ?>;
+            --primary-dark: <?php echo $themeSafe['primary_dark']; ?>;
+            --bg-body: <?php echo $themeSafe['bg_body']; ?>;
+            --text-color: <?php echo $themeSafe['text_color']; ?>;
+            --card-bg: <?php echo $themeSafe['card_bg']; ?>;
+            --shadow-color: <?php echo $themeSafe['shadow_color']; ?>;
+            --btn-bg: <?php echo $themeSafe['btn_bg']; ?>;
+            --btn-hover: <?php echo $themeSafe['btn_hover']; ?>;
+            --btn-text: <?php echo $themeSafe['btn_text']; ?>;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
         }
-        .form-section h5 {
-            border-bottom: 1px solid #dee2e6;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            background-color: var(--bg-body);
+            background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.05) 1px, transparent 0);
+            background-size: 22px 22px;
+            color: var(--text-color);
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            margin: 0;
+            padding-bottom: 96px;
+            -webkit-font-smoothing: antialiased;
         }
-        .checkbox-grid {
+
+        /* ============================================================ */
+        /* HEADER                                                       */
+        /* ============================================================ */
+        .app-header {
+            background: var(--primary);
+            color: #fff;
+            border-bottom: 5px solid var(--shadow-color);
+            box-shadow: 0 6px 0 0 var(--shadow-color);
+            padding: 14px 0;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            margin-bottom: 24px;
+        }
+        .app-header::after {
+            content: "";
+            position: absolute; inset: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.08) 0 50%, transparent 50% 100%);
+            background-size: 40px 40px;
+            pointer-events: none;
+        }
+        .header-inner {
+            max-width: 1300px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+            position: relative;
+            z-index: 1;
+        }
+        .header-brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+        .logo-img {
+            height: 58px; width: auto; max-width: 160px; min-width: 58px;
+            object-fit: contain;
+            border: 3px solid var(--shadow-color);
+            border-radius: 12px;
+            box-shadow: 4px 4px 0 0 var(--shadow-color);
+            background: #fff;
+            padding: 5px 8px;
+            flex-shrink: 0;
+        }
+        .header-title h1 {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 900;
+            letter-spacing: -0.3px;
+            line-height: 1.15;
+        }
+        .header-title p {
+            margin: 4px 0 0;
+            font-size: 0.78rem;
+            font-weight: 600;
+            opacity: 0.9;
+        }
+        .header-title p strong { background: rgba(255,255,255,0.18); padding: 1px 8px; border-radius: 6px; }
+
+        .header-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+        .meta-chip {
+            background: rgba(0,0,0,0.2);
+            border: 2px solid var(--shadow-color);
+            border-radius: 10px;
+            padding: 6px 12px;
+            font-size: 0.74rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn-close-header {
+            background: var(--danger);
+            color: #fff;
+            border: 2px solid var(--shadow-color);
+            box-shadow: 4px 4px 0 0 var(--shadow-color);
+            border-radius: 10px;
+            padding: 8px 16px;
+            font-weight: 800;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .btn-close-header:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 6px 6px 0 0 var(--shadow-color);
+            background: #b02a37;
+        }
+
+        /* ============================================================ */
+        /* CONTAINER / SECTION CARDS                                    */
+        /* ============================================================ */
+        .container-neo { max-width: 1300px; margin: 0 auto; padding: 0 20px; }
+
+        .section-card {
+            background: var(--card-bg);
+            border: 3px solid var(--shadow-color);
+            border-radius: 16px;
+            box-shadow: 6px 6px 0 0 var(--shadow-color);
+            margin-bottom: 22px;
+            overflow: hidden;
+        }
+        .section-header {
+            background: var(--primary);
+            color: #fff;
+            padding: 14px 22px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            border-bottom: 3px solid var(--shadow-color);
+        }
+        .section-num {
+            width: 34px; height: 34px;
+            border-radius: 10px;
+            background: rgba(0,0,0,0.25);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 900; font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+        .section-title { flex: 1; min-width: 0; }
+        .section-title h2 { margin: 0; font-size: 1.02rem; font-weight: 900; letter-spacing: -0.2px; }
+        .section-title p { margin: 2px 0 0; font-size: 0.76rem; opacity: 0.85; font-weight: 500; }
+        .section-body { padding: 22px; }
+
+        /* ============================================================ */
+        /* FORM                                                         */
+        /* ============================================================ */
+        .field-label {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 0.76rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: var(--text-color);
+            opacity: 0.85;
+            margin-bottom: 6px;
+        }
+        .field-label i { color: var(--primary); font-size: 0.85rem; }
+        .form-control, .form-select {
+            border: 2px solid var(--shadow-color);
+            border-radius: 10px;
+            padding: 9px 12px;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.88rem;
+            color: var(--text-color);
+            background: #fff;
+            transition: all 0.15s;
+        }
+        .form-control:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+        }
+        .text-uppercase { text-transform: uppercase; }
+        textarea.form-control { resize: vertical; min-height: 72px; }
+        .form-text { font-size: 0.72rem; color: var(--text-color); opacity: 0.6; margin-top: 4px; }
+        .invalid-feedback { font-size: 0.74rem; color: var(--danger); font-weight: 700; margin-top: 4px; }
+        .form-control.is-invalid { border-color: var(--danger); box-shadow: 3px 3px 0 0 var(--danger); }
+
+        .input-group-neo { display: flex; align-items: stretch; }
+        .input-group-neo .icon-box {
+            background: rgba(0,0,0,0.05);
+            border: 2px solid var(--shadow-color);
+            border-right: none;
+            border-radius: 10px 0 0 10px;
+            padding: 0 12px;
+            display: flex; align-items: center;
+            color: var(--primary);
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+        .input-group-neo .form-control { border-radius: 0 10px 10px 0; }
+
+        /* ============================================================ */
+        /* SWITCHES                                                     */
+        /* ============================================================ */
+        .switch-row { display: flex; flex-wrap: wrap; gap: 12px; }
+        .switch-card {
+            flex: 1 1 220px;
+            min-width: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 16px;
+            background: #f8f9fb;
+            border: 2px solid var(--shadow-color);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .switch-card:hover {
+            transform: translate(-1px, -1px);
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            background: rgba(0,0,0,0.02);
+        }
+        .switch-card .switch-info { min-width: 0; flex: 1; }
+        .switch-card .switch-name { font-weight: 800; font-size: 0.88rem; margin: 0; line-height: 1.2; }
+        .switch-card .switch-desc { font-size: 0.72rem; opacity: 0.65; margin: 2px 0 0; }
+        .switch-toggle {
+            position: relative;
+            width: 46px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+        .switch-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+        .switch-toggle .track {
+            position: absolute; inset: 0;
+            background: #d1d5db;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border: 2px solid var(--shadow-color);
+        }
+        .switch-toggle .track::after {
+            content: "";
+            position: absolute;
+            width: 16px; height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            top: 2px; left: 2px;
+            transition: transform 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .switch-toggle input:checked + .track { background: var(--primary); }
+        .switch-toggle input:checked + .track::after { transform: translateX(22px); }
+        .switch-toggle.danger input:checked + .track { background: var(--danger); }
+
+        /* ============================================================ */
+        /* COMODIDADES                                                  */
+        /* ============================================================ */
+        .comodidades-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
             gap: 10px;
         }
-        .form-check-label {
-            margin-left: 5px;
+        .comodidade-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            background: #f8f9fb;
+            border: 2px solid var(--shadow-color);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.15s;
+            user-select: none;
         }
-        .img-loading {
-            opacity: 0.3;
+        .comodidade-item:hover {
+            transform: translate(-1px, -1px);
+            box-shadow: 2px 2px 0 0 var(--shadow-color);
         }
-        .img-fallback {
-            opacity: 0.7;
+        .comodidade-item input { display: none; }
+        .comodidade-item .check-box {
+            width: 22px; height: 22px;
+            border: 2px solid var(--shadow-color);
+            border-radius: 6px;
+            background: #fff;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.15s;
+            color: transparent;
+            font-size: 0.7rem;
         }
-        .email-notification {
+        .comodidade-item input:checked + .check-box {
+            background: var(--primary);
+            color: #fff;
+        }
+        .comodidade-item .com-nome {
+            font-weight: 700;
+            font-size: 0.84rem;
+            flex: 1;
+            min-width: 0;
+        }
+        .comodidade-item .com-icon { color: var(--primary); font-size: 0.85rem; }
+        .comodidade-item input:checked ~ .com-nome { color: var(--primary); }
+
+        /* ============================================================ */
+        /* UPLOAD DO CARD                                               */
+        /* ============================================================ */
+        .card-upload-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            align-items: start;
+        }
+        @media (max-width: 900px) {
+            .card-upload-layout { grid-template-columns: 1fr; }
+        }
+
+        /* Preview */
+        .card-preview {
+            position: relative;
+            aspect-ratio: 16 / 9;
+            border: 3px solid var(--shadow-color);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 5px 5px 0 0 var(--shadow-color);
+            background: #f8f9fb;
+        }
+        .card-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .card-preview-empty {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: #9ca3af;
+            font-weight: 700;
+        }
+        .card-preview-empty i { font-size: 2.2rem; opacity: 0.7; }
+        .card-preview-empty span { font-size: 0.82rem; }
+
+        .card-preview-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.75);
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.68rem;
+            font-weight: 800;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            backdrop-filter: blur(4px);
+            border: 1.5px solid rgba(255,255,255,0.25);
+        }
+        .card-preview-badge.is-ok { background: rgba(16,185,129,0.9); }
+        .card-preview-badge.is-empty { background: rgba(239,68,68,0.9); }
+
+        .card-preview-meta {
+            margin-top: 8px;
+            font-size: 0.72rem;
+            color: var(--text-color);
+            opacity: 0.6;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        /* Ações */
+        .card-upload-actions { display: flex; flex-direction: column; gap: 12px; }
+        .upload-title { font-size: 0.95rem; font-weight: 900; margin: 0; }
+        .upload-desc { font-size: 0.78rem; opacity: 0.7; margin: 0; font-weight: 500; }
+
+        .upload-dropzone {
+            display: block;
+            padding: 22px;
+            border: 2px dashed var(--shadow-color);
+            border-radius: 12px;
+            background: #f8f9fb;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.15s;
+            color: var(--text-color);
+        }
+        .upload-dropzone:hover,
+        .upload-dropzone.dragover {
+            background: rgba(0,0,0,0.04);
+            border-color: var(--primary);
+            border-style: solid;
+            transform: translate(-1px, -1px);
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+        }
+        .upload-dropzone .upload-icon {
+            display: block;
+            font-size: 1.8rem;
+            color: var(--primary);
+            margin-bottom: 8px;
+        }
+        .upload-dropzone .upload-main {
+            display: block;
+            font-weight: 800;
+            font-size: 0.9rem;
+            margin-bottom: 4px;
+        }
+        .upload-dropzone .upload-sub {
+            display: block;
+            font-size: 0.72rem;
+            opacity: 0.6;
+            font-weight: 600;
+        }
+
+        .file-info {
+            background: rgba(23,162,184,0.08);
+            border: 2px solid var(--info);
+            border-radius: 10px;
+            padding: 10px 14px;
+        }
+        .file-info-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.82rem;
+            font-weight: 600;
+        }
+        .file-info-row > i { color: var(--info); }
+        .file-info-row #fileName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .file-size { color: var(--info); font-weight: 800; font-size: 0.76rem; }
+        .file-clear {
+            background: transparent;
+            border: none;
+            color: var(--text-color);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 6px;
+            transition: all 0.15s;
+            font-size: 0.85rem;
+        }
+        .file-clear:hover { background: rgba(0,0,0,0.08); color: var(--danger); }
+
+        .card-remove-wrap { display: flex; justify-content: flex-start; }
+        .btn-remove {
+            background: var(--danger);
+            color: #fff;
+            border: 2px solid var(--shadow-color);
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            border-radius: 10px;
+            padding: 8px 16px;
+            font-weight: 800;
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+        .btn-remove:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 5px 5px 0 0 var(--shadow-color);
+            background: #b02a37;
+        }
+        .btn-remove.btn-undo {
+            background: var(--warning);
+            color: #000;
+        }
+        .btn-remove.btn-undo:hover { background: #e0a800; color: #000; }
+
+        /* ============================================================ */
+        /* ACTION BAR                                                   */
+        /* ============================================================ */
+        .action-bar {
             position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            max-width: 300px;
+            bottom: 0; left: 0; right: 0;
+            background: var(--card-bg);
+            border-top: 3px solid var(--shadow-color);
+            box-shadow: 0 -4px 0 0 var(--shadow-color);
+            padding: 14px 20px;
+            z-index: 40;
+        }
+        .action-bar-inner {
+            max-width: 1300px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .action-info {
+            font-size: 0.82rem;
+            font-weight: 600;
+            opacity: 0.75;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .action-info .dirty-badge {
+            background: var(--warning);
+            color: #000;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-weight: 800;
+            font-size: 0.72rem;
             display: none;
+        }
+        .action-info .dirty-badge.visible { display: inline-block; }
+        .btn-neo {
+            border: 2px solid var(--shadow-color);
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            border-radius: 10px;
+            padding: 10px 22px;
+            font-weight: 800;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: inherit;
+        }
+        .btn-save { background: var(--btn-bg); color: var(--btn-text); }
+        .btn-save:hover:not(:disabled) {
+            transform: translate(-2px, -2px);
+            box-shadow: 5px 5px 0 0 var(--shadow-color);
+            background: var(--btn-hover);
+            color: #fff;
+        }
+        .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-cancel { background: #fff; color: var(--text-color); }
+        .btn-cancel:hover {
+            transform: translate(-1px, -1px);
+            box-shadow: 4px 4px 0 0 var(--shadow-color);
+            background: #f8f9fb;
+            color: var(--text-color);
+        }
+
+        /* ============================================================ */
+        /* TIMER                                                        */
+        /* ============================================================ */
+        .session-timer {
+            position: fixed;
+            bottom: 96px; right: 20px;
+            background: var(--card-bg);
+            border: 2px solid var(--shadow-color);
+            border-radius: 10px;
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            padding: 8px 14px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 35;
+        }
+        .session-timer.warn { background: var(--warning); color: #000; }
+
+        /* ============================================================ */
+        /* RESPONSIVO                                                   */
+        /* ============================================================ */
+        @media (max-width: 768px) {
+            .app-header { padding: 10px 0; }
+            .header-inner { padding: 0 12px; }
+            .logo-img { height: 44px; max-width: 110px; }
+            .header-title h1 { font-size: 0.98rem; }
+            .header-title p { font-size: 0.7rem; }
+            .header-meta { width: 100%; }
+            .header-meta .meta-chip { flex: 1; justify-content: center; font-size: 0.68rem; }
+            .btn-close-header { width: 100%; justify-content: center; }
+            .container-neo { padding: 0 12px; }
+            .section-body { padding: 14px; }
+            .switch-card { flex-basis: 100%; }
+            .comodidades-grid { grid-template-columns: 1fr; }
+            .action-bar-inner { flex-direction: column; align-items: stretch; }
+            .action-bar-inner .btn-neo { width: 100%; justify-content: center; }
+            .session-timer { display: none; }
         }
     </style>
 </head>
 <body>
-    <div class="container py-4">
-        <!-- Contador de sessão -->
-        <audio id="alertSound" src="notification.mp3" preload="auto"></audio>
-        
-        <div id="sessionTimer" style="position:fixed; bottom:20px; left:20px; background:#f8f9fa; padding:10px; border-radius:5px; box-shadow:0 0 10px rgba(0,0,0,0.1); z-index:1000; border:1px solid #ddd;">
-            <i class="bi bi-clock" style="margin-right:5px;"></i>
-            Tempo restante: <span id="time" style="font-weight:bold;">--:--</span>
-        </div>
-        
-        <div id="sessionWarning" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1050;">
-            <div style="background:white; width:400px; margin:100px auto; padding:20px; border-radius:5px; box-shadow:0 0 20px rgba(0,0,0,0.2);">
-                <h3 style="color:#dc3545;"><i class="bi bi-exclamation-triangle-fill"></i> Sessão Prestes a Expirar</h3>
-                <p>Sua sessão expirará em <span id="warningTime">5</span> minutos.</p>
-                <p>Os dados foram salvos automaticamente.</p>
-                <div style="text-align:right; margin-top:20px;">
-                    <button onclick="logout()" class="btn btn-secondary me-2">Sair</button>
-                    <button onclick="extendSession()" class="btn btn-primary">Continuar</button>
-                </div>
+
+<!-- ============================================================ -->
+<!-- HEADER                                                       -->
+<!-- ============================================================ -->
+<header class="app-header">
+    <div class="header-inner">
+        <div class="header-brand">
+            <img src="img/logosunny.jpg" alt="Logo" class="logo-img">
+            <div class="header-title">
+                <h1><i class="fas fa-sliders-h me-2"></i> Editar Características</h1>
+                <p>
+                    <strong>#<?php echo $id; ?></strong>
+                    <?php echo htmlspecialchars($empreendimento['NomeEmpreendimento']); ?>
+                    <?php if ($empreendimento['NomeEmpresa'] !== '—'): ?>
+                        · <?php echo htmlspecialchars($empreendimento['NomeEmpresa']); ?>
+                    <?php endif; ?>
+                </p>
             </div>
         </div>
-        
-        <!-- Notificação de email enviado -->
-        <div id="emailNotification" class="email-notification alert alert-success alert-dismissible fade show">
-            <i class="fas fa-envelope me-2"></i>
-            <strong>Email enviado!</strong>
-            <p class="mb-0">Uma notificação foi enviada para os administradores.</p>
-            <button type="button" class="btn-close" onclick="hideEmailNotification()"></button>
+        <div class="header-meta">
+            <span class="meta-chip">
+                <i class="fas fa-clock"></i>
+                <?php
+                    $dataAtu = $empreendimento['DataAtualizacao'] ?? null;
+                    echo $dataAtu ? date('d/m/Y H:i', strtotime($dataAtu)) : '—';
+                ?>
+            </span>
+            <span class="meta-chip">
+                <i class="fas fa-user"></i>
+                <?php echo htmlspecialchars($empreendimento['UsuarioAtu'] ?: '—'); ?>
+            </span>
+            <button type="button" class="btn-close-header" onclick="tentarFechar()">
+                <i class="fas fa-times"></i> Fechar
+            </button>
         </div>
-        
-        <header class="container-fluid py-3 mb-4 border-bottom" style="background-color: #800000; color: white;">
-            <div class="container">
-                <div class="d-flex flex-column flex-md-row justify-content-between align-items-center">
-                    <div class="mb-2 mb-md-0 d-flex align-items-center">
-                        <img src="img/logotocca.jpg" alt="Logotipo Tocca" style="height: 50px; margin-right: 15px;">
-                        <div>
-                            <h1 class="mb-0 fs-4">
-                                <i class="fas fa-building me-2"></i> Empreendimentos Características
-                            </h1>
-                            <h3 class="mb-0 fs-4">
-                                <i class="fas fa-building me-2"></i> <?php echo htmlspecialchars($empreendimento['NomeEmpreendimento']); ?>
-                            </h3>
-                            <h5 class="mb-0 fs-4">
-                                <i class="fas fa-building me-2"></i> <?php echo htmlspecialchars($empreendimento['NomeEmpresa']); ?>
-                            </h5>
-                            <p class="mb-0 fs-6">SunnyImob</p>
-                        </div>
-                    </div>
-                    <div>
-                        <a href="#" class="btn btn-secondary" onclick="window.close()" style="background-color: #A0522D; border-color: #A0522D; color: white;">
-                            <i class="fas fa-times me-1"></i> Fechar
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </header>
-        
-        <?php if (isset($_SESSION['mensagem'])): ?>
-            <div class="alert alert-<?php echo $_SESSION['tipo_mensagem']; ?> alert-dismissible fade show">
-                <?php if ($_SESSION['tipo_mensagem'] == 'success' && strpos($_SESSION['mensagem'], 'Email') !== false): ?>
-                    <i class="fas fa-envelope me-2"></i>
-                <?php endif; ?>
-                <?php echo $_SESSION['mensagem']; ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-            <?php 
-            unset($_SESSION['mensagem']);
-            unset($_SESSION['tipo_mensagem']);
-            ?>
-        <?php endif; ?>
-        
-        <!-- Imagem do empreendimento -->
-        <div class="d-flex justify-content-center">
-            <div class="card" style="width: 18rem;">
-                <img src="card/<?php echo $empreendimento['Empreend_ID']; ?>.jpg"
-                    class="card-img-top ficha-imagem img-loading"
-                    alt="<?php echo htmlspecialchars($empreendimento['NomeEmpreendimento']); ?>"
-                    onload="this.classList.remove('img-loading')"
-                    onerror="this.onerror=null;this.src='card/default.jpg';this.classList.add('img-fallback');this.classList.remove('img-loading')">
-                <div class="card-body">
-                    <h5 class="card-title"><?php echo htmlspecialchars($empreendimento['NomeEmpreendimento']); ?></h5>
-                    <p class="card-text text-muted">
-                        <small>
-                            <i class="fas fa-info-circle me-1"></i>
-                            Última atualização: <?php echo date('d/m/Y H:i', strtotime($empreendimento['DataAtualizacao'])); ?><br>
-                            <i class="fas fa-user me-1"></i>
-                            Por: <?php echo htmlspecialchars($empreendimento['UsuarioAtu']); ?>
-                        </small>
-                    </p>
-                </div>
-            </div>
-        </div>
-        
-        <form method="post" id="formEdicao">
-            <input type="hidden" name="id" value="<?php echo $id; ?>">
-            <input type="hidden" name="idEmpresa" value="<?php echo $empreendimento['Empresa_Id']; ?>">
-            <input type="hidden" name="NomeEmpreend" value="<?php echo htmlspecialchars($empreendimento['NomeEmpreendimento']); ?>">
-            
-            <!-- Seção 1: Informações Básicas -->
-            <div class="form-section" style="background-color: #E1E1E1;">
-                <h5><i class="fas fa-info-circle"></i> Informações Básicas</h5>
-                
-                <div class="card mb-3" style="background-color: #F5F2F2;">
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-4 mb-2">
-                                <label for="Localidade" class="form-label">Localidade</label>
-                                <input type="text" class="form-control" id="Localidade" name="Localidade" value="<?php echo htmlspecialchars($empreendimento['Localidade']); ?>">
-                            </div>
-                            
-                            <div class="col-md-6 mb-3">
-                                <label for="Tipologia" class="form-label">Tipologia (ex: CASA/BANG/FLAT/STUDIO/2Q ou 1Q/2Q/3Q)</label>
-                                <input type="text" class="form-control text-uppercase" id="Tipologia" name="Tipologia"
-                                    value="<?php echo htmlspecialchars(strtoupper($empreendimento['Tipologia'])); ?>"
-                                    title="Digite combinações como CASA, BANG, STUDIO, 1Q/2Q ou BANG/STUDIO/3Q"
-                                    oninput="formatarTipologia(this)">
-                                <small class="form-text text-muted">Separe os valores com barra (ex: BANG/STUDIO/1Q/2Q)</small>
-                                <div class="invalid-feedback">
-                                    Formato inválido! Use: BANG, STUDIO ou 1Q-6Q separados por barra (ex: BANG/STUDIO/1Q/2Q)
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="card mb-3" style="background-color: #F5F2F2;">
-                    <div class="card-body d-flex justify-content-between align-items-center">
-                        <div class="form-check form-switch me-3">
-                            <input class="form-check-input" type="checkbox" id="Entregue" name="Entregue" <?php echo $empreendimento['Entregue'] ? 'checked' : ''; ?>>
-                            <label class="form-check-label" for="Entregue">Entregue</label>
-                        </div>
-                        
-                        <div class="form-check form-switch me-3">
-                            <input class="form-check-input" type="checkbox" id="Vendido" name="Vendido" <?php echo $empreendimento['Vendido'] ? 'checked' : ''; ?>>
-                            <label class="form-check-label" for="Vendido" style="color: red; font-size: <?php echo $empreendimento['Vendido'] ? '1.5em' : 'inherit'; ?>;">100% Vendido</label>
-                        </div>
-                        
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="Ocultar" name="Ocultar" <?php echo $empreendimento['Ocultar'] ? 'checked' : ''; ?> onchange="confirmarOcultar(this)">
-                            <label class="form-check-label" for="Ocultar">
-                                Ocultar
-                                <span id="textoConfirmacao" style="color: red; display: none; margin-left: 10px;">
-                                    Este empreendimento será ocultado no site
-                                </span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="card mb-3" style="background-color: #F5F2F2;">
-                    <div class="card-body">
-                        <div class="row">
-                            <!-- Campo Mês Entrega -->
-                            <div class="col-md-3">
-                                <label for="MesEntrega" class="form-label">Mês Entrega</label>
-                                <select class="form-select" id="MesEntrega" name="MesEntrega">
-                                    <option value="">Selecione...</option>
-                                    <?php
-                                    $mesAtual = $empreendimento['MesEntrega'] ? intval($empreendimento['MesEntrega']) : 0;
-                                    for ($i = 1; $i <= 12; $i++) {
-                                        $selected = ($mesAtual == $i) ? 'selected' : '';
-                                        $monthName = date('M', mktime(0, 0, 0, $i, 1));
-                                        echo "<option value='$i' $selected>$monthName ($i)</option>";
-                                    }
-                                    ?>
-                                </select>
-                            </div>
-                            
-                            <!-- Campo Ano Entrega -->
-                            <div class="col-md-3">
-                                <label for="AnoEntrega" class="form-label">Ano Entrega</label>
-                                <select class="form-select" id="AnoEntrega" name="AnoEntrega">
-                                    <option value="">Selecione...</option>
-                                    <?php
-                                    $anoAtual = $empreendimento['AnoEntrega'] ? intval($empreendimento['AnoEntrega']) : 0;
-                                    for ($i = 2020; $i <= 2035; $i++) {
-                                        $selected = ($anoAtual == $i) ? 'selected' : '';
-                                        echo "<option value='$i' $selected>$i</option>";
-                                    }
-                                    ?>
-                                </select>
-                            </div>
-                            
-                            <!-- Campo Distância do Mar -->
-                            <div class="col-md-3">
-                                <label for="ProximoMar" class="form-label">Distância do Mar (m)</label>
-                                <input type="number" class="form-control" id="ProximoMar" name="ProximoMar" value="<?php echo $empreendimento['ProximoMar']; ?>">
-                            </div>
-                            
-                            <!-- Campo Pavimentos -->
-                            <div class="col-md-3">
-                                <label for="Pavimentos" class="form-label">Pavimentos (Andares)</label>
-                                <input type="number" class="form-control" id="Pavimentos" name="Pavimentos" value="<?php echo $empreendimento['Pavimentos']; ?>">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="card mb-3" style="background-color: #F5F2F2;">
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-12">
-                                <label for="Descricao" class="form-label">Descrição</label>
-                                <textarea class="form-control" id="Descricao" name="Descricao" rows="3"><?php echo htmlspecialchars($empreendimento['Descricao']); ?></textarea>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Seção 2: Valores -->
-            <div class="form-section" style="background-color: #E1E1E1;">
-                <h5><i class="fas fa-money-bill-wave"></i> Valores</h5>
-                <div class="row">
-                    <div class="col-md-3 mb-3">
-                        <label for="ValorCond" class="form-label">Valor do Condomínio (R$)</label>
-                        <input type="text" class="form-control" id="ValorCond" name="ValorCond" value="<?php echo $valorCondExibicao; ?>" onkeyup="formatarCond();">
-                    </div>
-                    
-                    <div class="col-md-3 mb-3">
-                        <label for="ValorIPTU" class="form-label">Valor do IPTU (R$)</label>
-                        <input type="text" class="form-control" id="ValorIPTU" name="ValorIPTU" value="<?php echo $valorIPTUExibicao; ?>" onkeyup="formatarIPTU();">
-                    </div>
-                    
-                    <div class="col-md-3 mb-3">
-                        <label for="MenorPreco" class="form-label">Menor Preço (R$)</label>
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="fas fa-tag"></i></span>
-                            <input type="text" class="form-control" id="MenorPreco" name="MenorPreco" value="<?php echo $menorPrecoExibicao; ?>" onkeyup="formatarMoeda1();">
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-3 mb-3">
-                        <label for="MaiorPreco" class="form-label">Maior Preço (R$)</label>
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="fas fa-tags"></i></span>
-                            <input type="text" class="form-control" id="MaiorPreco" name="MaiorPreco" value="<?php echo $maiorPrecoExibicao; ?>" onkeyup="formatarMoeda2();">
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="row">
-                    <div class="col-md-3 mb-3">
-                        <label for="MetragemMin" class="form-label">Metragem Mínima (m²)</label>
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="fas fa-ruler-combined"></i></span>
-                            <input type="text" class="form-control metragem-input" id="MetragemMin" name="MetragemMin" 
-                                value="<?php echo htmlspecialchars($empreendimento['MetragemMin']); ?>"
-                                placeholder="0,00">
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-3 mb-3">
-                        <label for="MetragemMax" class="form-label">Metragem Máxima (m²)</label>
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="fas fa-ruler"></i></span>
-                            <input type="text" class="form-control metragem-input" id="MetragemMax" name="MetragemMax" 
-                                value="<?php echo htmlspecialchars($empreendimento['MetragemMax']); ?>"
-                                placeholder="0,00">
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-3 mb-3">
-                        <label for="VagasGaragem" class="form-label">Vagas de Garagem</label>
-                        <input type="number" class="form-control" id="VagasGaragem" name="VagasGaragem" value="<?php echo $empreendimento['VagasGaragem']; ?>">
-                    </div>
-                    
-                    <div class="col-md-3 mb-3">
-                        <label for="TipoGaragem" class="form-label">Tipo de Garagem</label>
-                        <select class="form-select" id="TipoGaragem" name="TipoGaragem">
-                            <option value="">Selecione...</option>
-                            <option value="Privativa" <?php echo $empreendimento['TipoGaragem'] == 'Privativa' ? 'selected' : ''; ?>>Privativa</option>
-                            <option value="Rotativa" <?php echo $empreendimento['TipoGaragem'] == 'Rotativa' ? 'selected' : ''; ?>>Rotativa</option>
-                        </select>
-                    </div>
-                    
-                    <div class="col-md-3 mb-3">
-                        <label for="QTD_Blocos" class="form-label">Quantidade de Blocos</label>
-                        <input type="number" class="form-control" id="QTD_Blocos" name="QTD_Blocos" value="<?php echo $empreendimento['Qtd_Blocos']; ?>">
-                    </div>
-                    
-                    <div class="col-md-3 mb-3">
-                        <label for="QTD_Unidades" class="form-label">Quantidade de Unidades</label>
-                        <input type="number" class="form-control" id="QTD_Unidades" name="QTD_Unidades" value="<?php echo $empreendimento['Qtd_Unidades']; ?>">
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Seção 3: Comodidades -->
-            <div class="form-section" style="background-color: #E1E1E1;">
-                <h5><i class="fas fa-swimming-pool"></i> Comodidades</h5>
-                <div class="checkbox-grid">
-                    <?php
-                    $comodidades = [
-                        1 => ['Academia', 'fa-dumbbell'],
-                        2 => ['BeiraMar', 'fa-umbrella-beach'],
-                        3 => ['Brinquedoteca', 'fa-gamepad'],
-                        4 => ['Coworking', 'fa-laptop-code'],
-                        5 => ['Emporio', 'fa-store'],
-                        6 => ['EspacoGourmet', 'fa-utensils'],
-                        7 => ['LoungeBar', 'fa-cocktail'],
-                        8 => ['PetPlace', 'fa-paw'],
-                        9 => ['Piscina2', 'fa-swimming-pool'],
-                        10 => ['QuadraTenis', 'fa-table-tennis'],
-                        11 => ['Recepcao24h', 'fa-concierge-bell'],
-                        12 => ['Restaurante', 'fa-utensils'],
-                        13 => ['RoofTop', 'fa-building'],
-                        14 => ['Salaojogos', 'fa-chess'],
-                        15 => ['Sauna', 'fa-hot-tub'],
-                        16 => ['Spa', 'fa-spa'],
-                        17 => ['Varanda', 'fa-door-open'],
-                        18 => ['VarandaGourmet', 'fa-grill-hot'],
-                        19 => ['GestoraAluguel', 'fa-key'],
-                        20 => ['Lavanderia', 'fa-tshirt'],
-                        21 => ['Bicicletario', 'fa-bicycle'],
-                        22 => ['Hidromassagem', 'fa-hot-tub'],
-                        23 => ['GasEncanado', 'fa-fire'],
-                        24 => ['PiscinaPrivativa', 'fa-water'],
-                        25 => ['FechaduraEletronica', 'fa-lock']
-                    ];
-                    
-                    foreach ($comodidades as $numero => $comodidade) {
-                        $nome = $comodidade[0];
-                        $icone = $comodidade[1];
-                        $checked = $empreendimento[$nome] ? 'checked' : '';
-                        echo "
-                        <div class='form-check form-switch mb-3'>
-                            <input class='form-check-input' type='checkbox' id='$nome' name='$nome' $checked>
-                            <label class='form-check-label' for='$nome'>$numero. <i class='fas $icone mr-2'></i> " . str_replace(['_', '2'], [' ', ''], $nome) . "</label>
-                        </div>";
-                    }
-                    ?>
-                </div>
-            </div>
-            
-            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                <a href="empresa_list2.php" class="btn btn-secondary me-md-2">Voltar</a>
-                <?php if (usuarioPodeEditar()): ?>
-                    <button type="submit" class="btn btn-primary" onclick="showEmailNotification()">
-                        <i class="fas fa-save me-1"></i> Atualizar Características
-                    </button>
-                <?php endif; ?>
-            </div>
-        </form>
     </div>
-    
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"></script>
-    
-    <script>
-    function confirmarOcultar(checkbox) {
-        var texto = document.getElementById("textoConfirmacao");
-        
-        if (checkbox.checked) {
-            texto.style.display = "inline";
-            var confirmacao = confirm("Tem certeza de que deseja ocultar este empreendimento?");
-            if (!confirmacao) {
-                checkbox.checked = false;
-                texto.style.display = "none";
-            }
-        } else {
-            texto.style.display = "none";
-        }
-    }
-    
-    function formatarTipologia(input) {
-        input.value = input.value.toUpperCase();
-        input.value = input.value.replace(/[^A-Z0-9\/]/g, '');
-        
+</header>
+
+<!-- ============================================================ -->
+<!-- FORM                                                         -->
+<!-- ============================================================ -->
+<div class="container-neo">
+<form method="post" id="formEdicao" enctype="multipart/form-data" novalidate>
+    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+    <input type="hidden" name="idEmpresa" value="<?php echo htmlspecialchars($empreendimento['Empresa_ID']); ?>">
+
+
+    <!-- ================= 1. INFORMAÇÕES BÁSICAS ================= -->
+    <section class="section-card">
+        <div class="section-header">
+            <div class="section-num">1</div>
+            <div class="section-title">
+                <h2>Informações Básicas</h2>
+                <p>Identificação, status e localização</p>
+            </div>
+        </div>
+        <div class="section-body">
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="field-label" for="Localidade"><i class="fas fa-map-marker-alt"></i> Localidade</label>
+                    <input type="text" class="form-control text-uppercase" id="Localidade" name="Localidade"
+                           value="<?php echo htmlspecialchars($empreendimento['Localidade']); ?>">
+                </div>
+                <div class="col-md-6">
+                    <label class="field-label" for="Tipologia"><i class="fas fa-layer-group"></i> Tipologia</label>
+                    <input type="text" class="form-control text-uppercase" id="Tipologia" name="Tipologia"
+                           value="<?php echo htmlspecialchars(strtoupper($empreendimento['Tipologia'])); ?>"
+                           placeholder="Ex.: BANG/STUDIO/2Q" oninput="formatarTipologia(this)">
+                    <div class="form-text">Separe com barra. Aceita: CASA, BANG, STUDIO, FLAT, 1Q–6Q</div>
+                    <div class="invalid-feedback">Formato inválido. Ex.: BANG/STUDIO/1Q/2Q</div>
+                </div>
+            </div>
+
+            <div class="switch-row mb-3">
+                <label class="switch-card">
+                    <div class="switch-info">
+                        <p class="switch-name">Entregue</p>
+                        <p class="switch-desc">Obra finalizada</p>
+                    </div>
+                    <div class="switch-toggle">
+                        <input type="checkbox" id="Entregue" name="Entregue" <?php echo $empreendimento['Entregue'] ? 'checked' : ''; ?>>
+                        <span class="track"></span>
+                    </div>
+                </label>
+                <label class="switch-card">
+                    <div class="switch-info">
+                        <p class="switch-name">100% Vendido</p>
+                        <p class="switch-desc">Sem unidades disponíveis</p>
+                    </div>
+                    <div class="switch-toggle">
+                        <input type="checkbox" id="Vendido" name="Vendido" <?php echo $empreendimento['Vendido'] ? 'checked' : ''; ?>>
+                        <span class="track"></span>
+                    </div>
+                </label>
+                <label class="switch-card">
+                    <div class="switch-info">
+                        <p class="switch-name">Ocultar do site</p>
+                        <p class="switch-desc">Não exibir publicamente</p>
+                    </div>
+                    <div class="switch-toggle danger">
+                        <input type="checkbox" id="Ocultar" name="Ocultar" <?php echo $empreendimento['Ocultar'] ? 'checked' : ''; ?>>
+                        <span class="track"></span>
+                    </div>
+                </label>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-3">
+                    <label class="field-label" for="MesEntrega"><i class="fas fa-calendar-alt"></i> Mês Entrega</label>
+                    <select class="form-select" id="MesEntrega" name="MesEntrega">
+                        <option value="">—</option>
+                        <?php
+                        $mesAtual = (int)($empreendimento['MesEntrega'] ?? 0);
+                        for ($i = 1; $i <= 12; $i++):
+                            $mesNome = date('M', mktime(0, 0, 0, $i, 1));
+                        ?>
+                            <option value="<?php echo $i; ?>" <?php echo $mesAtual == $i ? 'selected' : ''; ?>><?php echo $mesNome . " ($i)"; ?></option>
+                        <?php endfor; ?>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="AnoEntrega"><i class="fas fa-calendar"></i> Ano Entrega</label>
+                    <select class="form-select" id="AnoEntrega" name="AnoEntrega">
+                        <option value="">—</option>
+                        <?php
+                        $anoAtual = (int)($empreendimento['AnoEntrega'] ?? 0);
+                        for ($i = 2020; $i <= 2035; $i++):
+                        ?>
+                            <option value="<?php echo $i; ?>" <?php echo $anoAtual == $i ? 'selected' : ''; ?>><?php echo $i; ?></option>
+                        <?php endfor; ?>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="ProximoMar"><i class="fas fa-water"></i> Distância Mar (m)</label>
+                    <input type="number" class="form-control" id="ProximoMar" name="ProximoMar" min="0"
+                           value="<?php echo htmlspecialchars($empreendimento['ProximoMar'] ?? ''); ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="Pavimentos"><i class="fas fa-building"></i> Pavimentos</label>
+                    <input type="number" class="form-control" id="Pavimentos" name="Pavimentos" min="0"
+                           value="<?php echo htmlspecialchars($empreendimento['Pavimentos'] ?? ''); ?>">
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12">
+                    <label class="field-label" for="Descricao"><i class="fas fa-align-left"></i> Descrição</label>
+                    <textarea class="form-control text-uppercase" id="Descricao" name="Descricao" rows="3"><?php echo htmlspecialchars($empreendimento['Descricao']); ?></textarea>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- ================= 2. VALORES ================= -->
+    <section class="section-card">
+        <div class="section-header">
+            <div class="section-num">2</div>
+            <div class="section-title">
+                <h2>Valores e Metragens</h2>
+                <p>Custos, faixa de preço e área útil</p>
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="field-label" for="ValorCond"><i class="fas fa-home"></i> Condomínio (R$)</label>
+                    <input type="text" class="form-control money-mask" id="ValorCond" name="ValorCond" value="<?php echo $valorCondExibicao; ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="ValorIPTU"><i class="fas fa-receipt"></i> IPTU (R$)</label>
+                    <input type="text" class="form-control money-mask" id="ValorIPTU" name="ValorIPTU" value="<?php echo $valorIPTUExibicao; ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="MenorPreco"><i class="fas fa-tag"></i> Menor Preço (R$)</label>
+                    <input type="text" class="form-control money-mask" id="MenorPreco" name="MenorPreco" value="<?php echo $menorPrecoExibicao; ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="MaiorPreco"><i class="fas fa-tags"></i> Maior Preço (R$)</label>
+                    <input type="text" class="form-control money-mask" id="MaiorPreco" name="MaiorPreco" value="<?php echo $maiorPrecoExibicao; ?>">
+                </div>
+
+                <div class="col-md-3">
+                    <label class="field-label" for="MetragemMin"><i class="fas fa-ruler-combined"></i> Metragem Mín. (m²)</label>
+                    <div class="input-group-neo">
+                        <span class="icon-box"><i class="fas fa-ruler-combined"></i></span>
+                        <input type="text" class="form-control area-mask" id="MetragemMin" name="MetragemMin"
+                               value="<?php echo htmlspecialchars($empreendimento['MetragemMin'] ?? ''); ?>" placeholder="0,00">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="MetragemMax"><i class="fas fa-ruler"></i> Metragem Máx. (m²)</label>
+                    <div class="input-group-neo">
+                        <span class="icon-box"><i class="fas fa-ruler"></i></span>
+                        <input type="text" class="form-control area-mask" id="MetragemMax" name="MetragemMax"
+                               value="<?php echo htmlspecialchars($empreendimento['MetragemMax'] ?? ''); ?>" placeholder="0,00">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="QTD_Blocos"><i class="fas fa-cubes"></i> Qtd. Blocos</label>
+                    <input type="number" class="form-control" id="QTD_Blocos" name="QTD_Blocos" min="0"
+                           value="<?php echo htmlspecialchars($qtdBlocos); ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="QTD_Unidades"><i class="fas fa-door-open"></i> Qtd. Unidades</label>
+                    <input type="number" class="form-control" id="QTD_Unidades" name="QTD_Unidades" min="0"
+                           value="<?php echo htmlspecialchars($qtdUnidades); ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="VagasGaragem"><i class="fas fa-parking"></i> Vagas Garagem</label>
+                    <input type="number" class="form-control" id="VagasGaragem" name="VagasGaragem" min="0"
+                           value="<?php echo htmlspecialchars($empreendimento['VagasGaragem'] ?? ''); ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="TipoGaragem"><i class="fas fa-car"></i> Tipo Garagem</label>
+                    <select class="form-select" id="TipoGaragem" name="TipoGaragem">
+                        <option value="">—</option>
+                        <option value="Privativa" <?php echo $empreendimento['TipoGaragem'] == 'Privativa' ? 'selected' : ''; ?>>Privativa</option>
+                        <option value="Rotativa"  <?php echo $empreendimento['TipoGaragem'] == 'Rotativa'  ? 'selected' : ''; ?>>Rotativa</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="Suites"><i class="fas fa-bed"></i> Suítes</label>
+                    <input type="number" class="form-control" id="Suites" name="Suites" min="0"
+                           value="<?php echo htmlspecialchars($empreendimento['Suites'] ?? ''); ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="field-label" for="WCTotal"><i class="fas fa-bath"></i> Banheiros</label>
+                    <input type="number" class="form-control" id="WCTotal" name="WCTotal" min="0"
+                           value="<?php echo htmlspecialchars($empreendimento['WCTotal'] ?? ''); ?>">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ================= 3. COMODIDADES ================= -->
+    <section class="section-card">
+        <div class="section-header">
+            <div class="section-num">3</div>
+            <div class="section-title">
+                <h2>Comodidades e Lazer</h2>
+                <p>Clique nos itens para ativar/desativar</p>
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="comodidades-grid">
+                <?php
+                $comodidades = [
+                    'BeiraMar' => ['Beira Mar', 'fa-umbrella-beach'],
+                    'RoofTop' => ['RoofTop', 'fa-building'],
+                    'Academia' => ['Academia', 'fa-dumbbell'],
+                    'Sauna' => ['Sauna', 'fa-hot-tub'],
+                    'PetPlace' => ['Pet Place', 'fa-paw'],
+                    'EspacoGourmet' => ['Espaço Gourmet', 'fa-utensils'],
+                    'Restaurante' => ['Restaurante', 'fa-utensils'],
+                    'Coworking' => ['Coworking', 'fa-laptop-code'],
+                    'QuadraTenis' => ['Quadra Tênis', 'fa-table-tennis'],
+                    'Emporio' => ['Empório', 'fa-store'],
+                    'Piscina2' => ['Piscina', 'fa-swimming-pool'],
+                    'Spa' => ['Spa', 'fa-spa'],
+                    'Recepcao24h' => ['Recepção 24h', 'fa-concierge-bell'],
+                    'LoungeBar' => ['Lounge Bar', 'fa-cocktail'],
+                    'Brinquedoteca' => ['Brinquedoteca', 'fa-gamepad'],
+                    'Varanda' => ['Varanda', 'fa-door-open'],
+                    'VarandaGourmet' => ['Varanda Gourmet', 'fa-grill-hot'],
+                    'Salaojogos' => ['Sala de Jogos', 'fa-chess'],
+                    'GestoraAluguel' => ['Gestora Aluguel', 'fa-key'],
+                    'Lavanderia' => ['Lavanderia', 'fa-tshirt'],
+                    'Bicicletario' => ['Bicicletário', 'fa-bicycle'],
+                    'Hidromassagem' => ['Hidromassagem', 'fa-hot-tub'],
+                    'GasEncanado' => ['Gás Encanado', 'fa-fire'],
+                    'PiscinaPrivativa' => ['Piscina Privativa', 'fa-water'],
+                    'FechaduraEletronica' => ['Fechadura Eletrônica', 'fa-lock'],
+                ];
+                foreach ($comodidades as $campo => [$label, $icone]):
+                    $checked = !empty($empreendimento[$campo]) ? 'checked' : '';
+                ?>
+                <label class="comodidade-item">
+                    <input type="checkbox" name="<?php echo $campo; ?>" id="<?php echo $campo; ?>" <?php echo $checked; ?>>
+                    <span class="check-box"><i class="fas fa-check"></i></span>
+                    <span class="com-nome">
+                        <i class="fas <?php echo $icone; ?> com-icon"></i>
+                        <?php echo htmlspecialchars($label); ?>
+                    </span>
+                </label>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </section>
+
+    <!-- ================= 4. CARD DO IMÓVEL ================= -->
+    <section class="section-card">
+        <div class="section-header">
+            <div class="section-num">4</div>
+            <div class="section-title">
+                <h2>Card do Imóvel</h2>
+                <p>Imagem de destaque exibida na listagem pública</p>
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="card-upload-layout">
+
+                <!-- PREVIEW -->
+                <div>
+                    <div class="card-preview" id="cardPreviewContainer">
+                        <img src="<?php echo $cardUrl; ?>"
+                             alt="Card do imóvel"
+                             id="cardPreviewImg"
+                             <?php echo $cardExists ? '' : 'style="display:none;"'; ?>>
+
+                        <div class="card-preview-empty" id="cardPreviewEmpty"
+                             <?php echo $cardExists ? 'style="display:none;"' : ''; ?>>
+                            <i class="fas fa-image"></i>
+                            <span>Nenhuma imagem cadastrada</span>
+                        </div>
+
+                        <span class="card-preview-badge <?php echo $cardExists ? 'is-ok' : 'is-empty'; ?>"
+                              id="cardPreviewBadge">
+                            <i class="fas fa-<?php echo $cardExists ? 'check-circle' : 'times-circle'; ?>"></i>
+                            <span id="cardPreviewBadgeText"><?php echo $cardExists ? 'Imagem atual' : 'Sem imagem'; ?></span>
+                        </span>
+                    </div>
+                    <div class="card-preview-meta" id="cardPreviewMeta">
+                        <?php if ($cardExists): ?>
+                            <?php echo formatarBytes($cardSize); ?> ·
+                            Atualizada em <?php echo date('d/m/Y H:i', $cardTimestamp); ?>
+                        <?php else: ?>
+                            Nenhuma imagem cadastrada ainda
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- AÇÕES -->
+                <div class="card-upload-actions">
+                    <h3 class="upload-title">Enviar ou Trocar Imagem</h3>
+                    <p class="upload-desc">Recomendado: JPG em proporção 16:9. Máximo 5 MB.</p>
+
+                    <label class="upload-dropzone" id="uploadDropzone" for="card_image">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <span class="upload-main">Clique ou arraste uma imagem aqui</span>
+                        <span class="upload-sub">JPG · PNG · WebP · máx. 5 MB</span>
+                        <input type="file" id="card_image" name="card_image"
+                               accept="image/jpeg,image/png,image/webp"
+                               style="display:none;">
+                    </label>
+
+                    <div class="file-info" id="fileInfo" style="display:none;">
+                        <div class="file-info-row">
+                            <i class="fas fa-file-image"></i>
+                            <span id="fileName">—</span>
+                            <span class="file-size" id="fileSize">—</span>
+                            <button type="button" class="file-clear" id="fileClear" title="Cancelar seleção">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="card-remove-wrap" id="removeWrap" <?php echo $cardExists ? '' : 'style="display:none;"'; ?>>
+                        <button type="button" class="btn-remove" id="btnRemoveCard">
+                            <i class="fas fa-trash"></i> Remover imagem atual
+                        </button>
+                        <input type="hidden" name="remover_card" id="removerCard" value="0">
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+</form>
+</div>
+
+<!-- ============================================================ -->
+<!-- ACTION BAR                                                   -->
+<!-- ============================================================ -->
+<div class="action-bar">
+    <div class="action-bar-inner">
+        <div class="action-info">
+            <i class="fas fa-info-circle"></i>
+            <span id="actionHint">Nenhuma alteração pendente</span>
+            <span class="dirty-badge" id="dirtyBadge">0 pendentes</span>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn-neo btn-cancel" onclick="tentarFechar()">
+                <i class="fas fa-times"></i> Cancelar
+            </button>
+            <button type="submit" class="btn-neo btn-save" id="btnSave" form="formEdicao">
+                <i class="fas fa-save"></i> Salvar Características
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Timer de sessão -->
+<div class="session-timer" id="sessionTimer">
+    <i class="bi bi-clock"></i>
+    <span id="timeRemaining">--:--</span>
+</div>
+
+<!-- ============================================================ -->
+<!-- SCRIPTS                                                      -->
+<!-- ============================================================ -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"></script>
+
+<script>
+(function () {
+    'use strict';
+
+    const THEME_PRIMARY = '<?php echo $themeSafe['primary']; ?>';
+    const MAX_BYTES     = 5 * 1024 * 1024;
+    const ALLOWED_MIME  = ['image/jpeg', 'image/png', 'image/webp'];
+
+    const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3500,
+        timerProgressBar: true
+    });
+
+    // ============================================================
+    // Estado da imagem
+    // ============================================================
+    let cardImageChanged   = false;
+    let currentObjectUrl   = null;
+    let originalImgSrc     = null;
+    let originalHasImage   = false;
+    let originalRemoverVal = '0';
+
+    // ============================================================
+    // Utilitários
+    // ============================================================
+    window.formatarTipologia = function (input) {
+        input.value = input.value.toUpperCase().replace(/[^A-Z0-9\/]/g, '');
         const isValid = /^((CASA|BANG|STUDIO|FLAT|[1-6]Q)(\/(BANG|STUDIO|[1-6]Q))*)$/.test(input.value);
-        
-        if (input.value && !isValid) {
-            input.classList.add('is-invalid');
-        } else {
-            input.classList.remove('is-invalid');
+        input.classList.toggle('is-invalid', input.value !== '' && !isValid);
+    };
+
+    function formatarBytes(bytes) {
+        if (bytes >= 1048576) return (bytes / 1048576).toFixed(2).replace('.', ',') + ' MB';
+        if (bytes >= 1024)    return (bytes / 1024).toFixed(1).replace('.', ',') + ' KB';
+        return bytes + ' B';
+    }
+
+    // ============================================================
+    // Dirty state
+    // ============================================================
+    let formOriginal = null;
+
+    function capturarEstado() {
+        const form = document.getElementById('formEdicao');
+        const data = new FormData(form);
+        const obj = {};
+        for (const [k, v] of data.entries()) {
+            if (k === 'csrf_token') continue;
+            if (k === 'card_image') continue; // arquivo é tratado à parte
+            if (typeof v === 'string') obj[k] = v;
         }
+        return JSON.stringify(obj);
     }
-    
-    function showEmailNotification() {
-        // Mostrar notificação de email enviado
-        setTimeout(function() {
-            document.getElementById('emailNotification').style.display = 'block';
-        }, 1000);
+
+    function verificarDirty() {
+        if (!formOriginal) return false;
+        const atual = capturarEstado();
+        const formChanged = atual !== formOriginal;
+        const dirty = formChanged || cardImageChanged;
+
+        const badge = document.getElementById('dirtyBadge');
+        const hint  = document.getElementById('actionHint');
+
+        if (dirty) {
+            badge.classList.add('visible');
+            badge.textContent = 'Alterações pendentes';
+            hint.textContent = 'Você tem alterações não salvas';
+        } else {
+            badge.classList.remove('visible');
+            hint.textContent = 'Nenhuma alteração pendente';
+        }
+        return dirty;
     }
-    
-    function hideEmailNotification() {
-        document.getElementById('emailNotification').style.display = 'none';
+
+    // ============================================================
+    // Preview / Upload
+    // ============================================================
+    function setPreviewFromFile(file) {
+        // valida cliente
+        if (!ALLOWED_MIME.includes(file.type)) {
+            Toast.fire({ icon: 'error', title: 'Formato inválido. Use JPG, PNG ou WebP.' });
+            return false;
+        }
+        if (file.size > MAX_BYTES) {
+            Toast.fire({ icon: 'error', title: 'Imagem muito grande (' + formatarBytes(file.size) + '). Máx 5 MB.' });
+            return false;
+        }
+
+        // Preview
+        if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+        currentObjectUrl = URL.createObjectURL(file);
+
+        const img   = document.getElementById('cardPreviewImg');
+        const empty = document.getElementById('cardPreviewEmpty');
+        img.src = currentObjectUrl;
+        img.style.display = 'block';
+        empty.style.display = 'none';
+
+        // Badge
+        const badge = document.getElementById('cardPreviewBadge');
+        badge.classList.remove('is-empty');
+        badge.classList.add('is-ok');
+        badge.querySelector('i').className = 'fas fa-clock';
+        document.getElementById('cardPreviewBadgeText').textContent = 'Pré-visualização';
+
+        // Meta
+        document.getElementById('cardPreviewMeta').textContent =
+            'Novo arquivo: ' + formatarBytes(file.size) + ' · ' + file.name;
+
+        // File info
+        document.getElementById('fileName').textContent = file.name;
+        document.getElementById('fileSize').textContent = formatarBytes(file.size);
+        document.getElementById('fileInfo').style.display = 'block';
+
+        // Desfaz remoção pendente
+        const removerInput = document.getElementById('removerCard');
+        if (removerInput) removerInput.value = '0';
+
+        // Esconde botão remover (novo arquivo vai substituir)
+        const removeWrap = document.getElementById('removeWrap');
+        if (removeWrap) removeWrap.style.display = 'none';
+
+        cardImageChanged = true;
+        verificarDirty();
+        return true;
     }
-    
-    $(document).ready(function() {
-        // Máscara para valores monetários
-        $('#MenorPreco, #MaiorPreco, #ValorCond, #ValorIPTU').mask('#.##0,00', {reverse: true});
-        
-        // Máscara para metragens
-        $('#MetragemMin, #MetragemMax').mask('0000,00', {reverse: true});
-        
-        // Validação no submit
-        $('form').on('submit', function(e) {
-            // Remover formatação antes do envio
-            $('#MenorPreco, #MaiorPreco, #ValorCond, #ValorIPTU').each(function() {
-                var valor = $(this).val().replace(/\./g, '').replace(',', '.');
-                $(this).val(valor);
-            });
-            
-            $('#MetragemMin, #MetragemMax').each(function() {
-                var valor = $(this).val().replace(',', '.');
-                $(this).val(valor);
+
+    function restorePreview() {
+        if (currentObjectUrl) {
+            URL.revokeObjectURL(currentObjectUrl);
+            currentObjectUrl = null;
+        }
+
+        const img   = document.getElementById('cardPreviewImg');
+        const empty = document.getElementById('cardPreviewEmpty');
+        const badge = document.getElementById('cardPreviewBadge');
+
+        if (originalHasImage) {
+            img.src = originalImgSrc;
+            img.style.display = 'block';
+            empty.style.display = 'none';
+            badge.classList.remove('is-empty');
+            badge.classList.add('is-ok');
+            badge.querySelector('i').className = 'fas fa-check-circle';
+            document.getElementById('cardPreviewBadgeText').textContent = 'Imagem atual';
+        } else {
+            img.style.display = 'none';
+            empty.style.display = 'flex';
+            badge.classList.remove('is-ok');
+            badge.classList.add('is-empty');
+            badge.querySelector('i').className = 'fas fa-times-circle';
+            document.getElementById('cardPreviewBadgeText').textContent = 'Sem imagem';
+        }
+
+        // Meta original
+        document.getElementById('cardPreviewMeta').textContent = originalMetaText;
+
+        // File info
+        document.getElementById('fileInfo').style.display = 'none';
+        document.getElementById('fileName').textContent = '—';
+        document.getElementById('fileSize').textContent = '—';
+
+        // Restaura botão remover
+        const removeWrap = document.getElementById('removeWrap');
+        if (removeWrap) removeWrap.style.display = originalHasImage ? 'flex' : 'none';
+
+        // Reset input
+        const input = document.getElementById('card_image');
+        if (input) input.value = '';
+
+        // Reset hidden
+        const removerInput = document.getElementById('removerCard');
+        if (removerInput) removerInput.value = originalRemoverVal;
+
+        cardImageChanged = false;
+        verificarDirty();
+    }
+
+    let originalMetaText = '';
+
+    // ============================================================
+    // Document ready
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', function () {
+
+        // Snapshot inicial
+        formOriginal    = capturarEstado();
+        originalHasImage = <?php echo $cardExists ? 'true' : 'false'; ?>;
+        originalImgSrc   = document.getElementById('cardPreviewImg').getAttribute('src');
+        originalMetaText = document.getElementById('cardPreviewMeta').textContent;
+        const remInput = document.getElementById('removerCard');
+        if (remInput) originalRemoverVal = remInput.value;
+
+        // Money masks
+        $('.money-mask').mask('#.##0,00', { reverse: true });
+        $('.area-mask').mask('00000,00', { reverse: true });
+
+        // Dirty tracking
+        document.querySelectorAll('#formEdicao input, #formEdicao select, #formEdicao textarea').forEach(function (el) {
+            if (el.type === 'file') return;
+            el.addEventListener('change', verificarDirty);
+            el.addEventListener('input', verificarDirty);
+        });
+
+        // Upload input
+        const fileInput = document.getElementById('card_image');
+        fileInput.addEventListener('change', function (e) {
+            if (e.target.files && e.target.files[0]) {
+                setPreviewFromFile(e.target.files[0]);
+            }
+        });
+
+        // Dropzone drag & drop
+        const dropzone = document.getElementById('uploadDropzone');
+        ['dragenter', 'dragover'].forEach(evt => {
+            dropzone.addEventListener(evt, function (e) {
+                e.preventDefault(); e.stopPropagation();
+                dropzone.classList.add('dragover');
             });
         });
-        
-        // Esconder notificação de email após 5 segundos
-        setTimeout(function() {
-            hideEmailNotification();
-        }, 5000);
-    });
-    
-    // Script do contador de sessão
-    var sessionTimeout = <?php echo (ini_get('session.gc_maxlifetime') ?: 1440) * 60; ?>;
-    
-    function updateTimer() {
-        var minutes = Math.floor(sessionTimeout / 60);
-        var seconds = sessionTimeout % 60;
-        var timeString = minutes.toString().padStart(2, '0') + ":" + seconds.toString().padStart(2, '0');
-        document.getElementById('time').textContent = timeString;
-        
-        var timerElement = document.getElementById('sessionTimer');
-        if(sessionTimeout <= 300) { // 5 minutos
-            timerElement.style.backgroundColor = '#fff3cd';
-            timerElement.style.borderColor = '#ffc107';
-        }
-        
-        sessionTimeout--;
-        if(sessionTimeout > 0) {
-            setTimeout(updateTimer, 1000);
-        } else {
-            window.location.href = "login_p1.php?timeout=1";
-        }
-    }
-    
-    document.addEventListener('DOMContentLoaded', function() {
-        updateTimer();
-        
-        // Mostrar notificação se o formulário foi enviado com sucesso
-        <?php if (isset($_SESSION['mensagem']) && $_SESSION['tipo_mensagem'] == 'success'): ?>
-            setTimeout(function() {
-                showEmailNotification();
-            }, 500);
+        ['dragleave', 'drop'].forEach(evt => {
+            dropzone.addEventListener(evt, function (e) {
+                e.preventDefault(); e.stopPropagation();
+                dropzone.classList.remove('dragover');
+            });
+        });
+        dropzone.addEventListener('drop', function (e) {
+            const files = e.dataTransfer.files;
+            if (files && files[0]) {
+                if (setPreviewFromFile(files[0])) {
+                    fileInput.files = files;
+                }
+            }
+        });
+
+        // Cancelar arquivo selecionado
+        document.getElementById('fileClear').addEventListener('click', function () {
+            restorePreview();
+        });
+
+        // Remover imagem atual
+        document.getElementById('btnRemoveCard').addEventListener('click', function () {
+            const btn = this;
+
+            // Se já é "desfazer"
+            if (btn.classList.contains('btn-undo')) {
+                // restaura estado
+                if (currentObjectUrl) {
+                    URL.revokeObjectURL(currentObjectUrl);
+                    currentObjectUrl = null;
+                }
+                const img   = document.getElementById('cardPreviewImg');
+                const empty = document.getElementById('cardPreviewEmpty');
+                const badge = document.getElementById('cardPreviewBadge');
+                img.style.display = 'block';
+                empty.style.display = 'none';
+                badge.classList.remove('is-empty');
+                badge.classList.add('is-ok');
+                badge.querySelector('i').className = 'fas fa-check-circle';
+                document.getElementById('cardPreviewBadgeText').textContent = 'Imagem atual';
+
+                document.getElementById('removerCard').value = '0';
+                document.getElementById('cardPreviewMeta').textContent = originalMetaText;
+
+                btn.classList.remove('btn-undo');
+                btn.innerHTML = '<i class="fas fa-trash"></i> Remover imagem atual';
+
+                cardImageChanged = false;
+                verificarDirty();
+                return;
+            }
+
+            // Confirmação real
+            Swal.fire({
+                title: 'Remover imagem?',
+                text: 'A imagem do card será removida quando você salvar.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sim, remover',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: THEME_PRIMARY,
+                cancelButtonColor: '#6b7280'
+            }).then(r => {
+                if (!r.isConfirmed) return;
+
+                // Atualiza UI
+                const img   = document.getElementById('cardPreviewImg');
+                const empty = document.getElementById('cardPreviewEmpty');
+                const badge = document.getElementById('cardPreviewBadge');
+
+                img.style.display = 'none';
+                empty.style.display = 'flex';
+                badge.classList.remove('is-ok');
+                badge.classList.add('is-empty');
+                badge.querySelector('i').className = 'fas fa-times-circle';
+                document.getElementById('cardPreviewBadgeText').textContent = 'Será removida';
+
+                document.getElementById('removerCard').value = '1';
+                document.getElementById('cardPreviewMeta').textContent = 'A imagem atual será removida ao salvar';
+
+                btn.classList.add('btn-undo');
+                btn.innerHTML = '<i class="fas fa-undo"></i> Desfazer remoção';
+
+                cardImageChanged = true;
+                verificarDirty();
+            });
+        });
+
+        // Submit — serializa valores numéricos e bloqueia botão
+        document.getElementById('formEdicao').addEventListener('submit', function () {
+            $('.money-mask').each(function () {
+                var v = ($(this).val() || '').replace(/\./g, '').replace(',', '.');
+                $(this).val(v);
+            });
+            $('.area-mask').each(function () {
+                var v = ($(this).val() || '').replace(',', '.');
+                $(this).val(v);
+            });
+            const btn = document.getElementById('btnSave');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando…';
+        });
+
+        // Flash message
+        <?php if ($mensagem): ?>
+            Toast.fire({
+                icon: '<?php echo $tipoMensagem === "success" ? "success" : ($tipoMensagem === "danger" ? "error" : "info"); ?>',
+                title: <?php echo json_encode($mensagem); ?>,
+                timer: <?php echo $emailEnviado ? 6000 : 4500; ?>
+            });
         <?php endif; ?>
+
+        // Confirmação ao sair
+        window.addEventListener('beforeunload', function (e) {
+            if (verificarDirty()) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        // Timer de sessão
+        iniciarTimerSessao(<?php echo (int)ini_get('session.gc_maxlifetime') ?: 1440; ?>);
     });
-    </script>
+
+    // ============================================================
+    // Fechar
+    // ============================================================
+    window.tentarFechar = function () {
+        if (verificarDirty()) {
+            Swal.fire({
+                title: 'Sair sem salvar?',
+                text: 'Você tem alterações não salvas. Elas serão perdidas.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sair mesmo assim',
+                cancelButtonText: 'Ficar',
+                confirmButtonColor: THEME_PRIMARY,
+                cancelButtonColor: '#6b7280'
+            }).then(function (r) {
+                if (r.isConfirmed) {
+                    window.onbeforeunload = null;
+                    window.close();
+                }
+            });
+        } else {
+            window.onbeforeunload = null;
+            window.close();
+        }
+    };
+
+    // ============================================================
+    // Timer de sessão
+    // ============================================================
+    function iniciarTimerSessao(minutosTotais) {
+        var restanteSeg = minutosTotais * 60;
+        var el  = document.getElementById('timeRemaining');
+        var box = document.getElementById('sessionTimer');
+        if (!el || !box) return;
+
+        function tick() {
+            if (restanteSeg <= 0) {
+                window.location.href = 'login_p1.php?timeout=1';
+                return;
+            }
+            var h = Math.floor(restanteSeg / 3600);
+            var m = Math.floor((restanteSeg % 3600) / 60);
+            var s = restanteSeg % 60;
+            el.textContent = (h > 0 ? h + 'h ' : '') +
+                             String(m).padStart(2, '0') + ':' +
+                             String(s).padStart(2, '0');
+
+            if (restanteSeg <= 300) box.classList.add('warn');
+            else box.classList.remove('warn');
+
+            restanteSeg--;
+            setTimeout(tick, 1000);
+        }
+        tick();
+    }
+})();
+</script>
 </body>
 </html>
