@@ -36,14 +36,30 @@ if (empty($_SESSION['csrf_sunnyemp'])) {
 }
 
 // ============================================================
+// HELPER DE LOGO
+// ============================================================
+function resolverLogo(?string $confImgLogo, string $fallback = 'img/logosunny.jpg'): string
+{
+    $confImgLogo = trim((string)$confImgLogo);
+
+    if ($confImgLogo === '') {
+        $caminho = $fallback;
+    } elseif (strpos($confImgLogo, '/') !== false) {
+        $caminho = $confImgLogo;
+    } else {
+        $caminho = 'img/' . $confImgLogo;
+    }
+
+    return implode('/', array_map('rawurlencode', explode('/', $caminho)));
+}
+
+// ============================================================
 // UFs
 // ============================================================
 $UFs = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
 // ============================================================
 // CAMPOS DO FORMULÁRIO
-// NOTA: Conf_CorPrimaria, Conf_CorSecundaria e Conf_CorFundo
-//       NÃO são gerenciados aqui — vêm de theme_config.php.
 // ============================================================
 function coletarCampos() {
     return [
@@ -82,12 +98,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     $fields = coletarCampos();
 
-    // ========================= CREATE =========================
+    // CREATE
     if ($action === 'create') {
         if (empty($fields['EmpresaSunny'])) {
             $erros[] = "O nome da empresa é obrigatório.";
         }
-
         if (empty($erros)) {
             try {
                 $sql = "INSERT INTO sunnyempresas (
@@ -98,6 +113,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
                 $stmt = $db->prepare($sql);
                 $stmt->execute(array_values($fields));
+
+                if ((int)($_SESSION['IdEmp'] ?? 0) === (int)$db->lastInsertId()) {
+                    unset($_SESSION['empresa_carregada'], $_SESSION['Conf_ImgLogo']);
+                }
+
                 $_SESSION['MsgSucesso'] = "Empresa <strong>" . htmlspecialchars($fields['EmpresaSunny']) . "</strong> criada com sucesso!";
                 header("Location: " . $_SERVER['PHP_SELF']);
                 exit;
@@ -107,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-    // ========================= UPDATE =========================
+    // UPDATE
     } elseif ($action === 'update') {
         $id = (int)($_POST['IdEmp'] ?? 0);
         if ($id <= 0) $erros[] = "ID inválido.";
@@ -125,6 +145,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $params = array_values($fields);
                 $params[] = $id;
                 $stmt->execute($params);
+
+                if ((int)($_SESSION['IdEmp'] ?? 0) === $id) {
+                    unset($_SESSION['empresa_carregada'], $_SESSION['Conf_ImgLogo']);
+                }
+
                 $_SESSION['MsgSucesso'] = "Empresa <strong>" . htmlspecialchars($fields['EmpresaSunny']) . "</strong> atualizada!";
                 header("Location: " . $_SERVER['PHP_SELF']);
                 exit;
@@ -134,7 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-    // ========================= DELETE =========================
+    // DELETE
     } elseif ($action === 'delete') {
         $id = (int)($_POST['IdEmp'] ?? 0);
 
@@ -194,9 +219,10 @@ $totalEmpresas = count($empresas);
 $totalUsuariosVinculados = 0;
 foreach ($empresas as $e) $totalUsuariosVinculados += (int)($e['TotalUsuarios'] ?? 0);
 
-// JSON para o JS
 $empresasJson = json_encode($empresas, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
 if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
+
+$headerLogoUrl = resolverLogo($_SESSION['Conf_ImgLogo'] ?? '', 'img/logosunny.jpg');
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -206,7 +232,6 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
     <title>Gestão de Empresas · SunnyImob</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -241,7 +266,7 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
             -webkit-font-smoothing: antialiased;
         }
 
-        .container-neo { max-width: 1400px; margin: 0 auto; padding: 0 20px; }
+        .container-neo { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
 
         /* HEADER */
         .app-header {
@@ -263,7 +288,7 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
             pointer-events: none;
         }
         .header-inner {
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 0 20px;
             display: flex;
@@ -411,157 +436,200 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
         .btn-neo-secondary:hover { background: #f8f9fb; color: var(--text-color); }
 
         .btn-icon {
-            width: 34px; height: 34px;
+            width: 40px; height: 40px;
             padding: 0;
             border: 2px solid var(--shadow-color);
-            border-radius: 8px;
+            border-radius: 10px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             transition: all 0.15s;
             box-shadow: 2px 2px 0 0 var(--shadow-color);
-            font-size: 0.82rem;
+            font-size: 0.9rem;
             text-decoration: none;
         }
         .btn-icon:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 0 var(--shadow-color); }
         .btn-icon.edit   { background: var(--warning); color: #000; }
         .btn-icon.delete { background: var(--danger);  color: #fff; }
 
-        /* TABELA */
-        .table-card {
+        /* ============================================================ */
+        /* LISTA DE CARDS (UM POR LINHA)                                */
+        /* ============================================================ */
+        .cards-list {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .empresa-card {
+            display: flex;
+            align-items: center;
+            gap: 24px;
             background: var(--card-bg);
             border: 3px solid var(--shadow-color);
-            border-radius: 16px;
+            border-radius: 18px;
             box-shadow: 6px 6px 0 0 var(--shadow-color);
-            overflow: hidden;
-            padding: 6px;
+            padding: 20px 24px;
+            transition: all 0.18s;
         }
-        table.dataTable.table-neo {
-            width: 100% !important;
-            border-collapse: separate !important;
-            border-spacing: 0 !important;
-            background: var(--card-bg);
-            color: var(--text-color);
-            margin: 0 !important;
+        .empresa-card:hover {
+            transform: translate(-3px, -3px);
+            box-shadow: 9px 9px 0 0 var(--shadow-color);
         }
-        table.dataTable.table-neo thead th {
-            background: var(--primary) !important;
-            color: #fff !important;
-            font-weight: 800;
-            text-transform: uppercase;
-            font-size: 0.72rem;
-            letter-spacing: 1px;
-            padding: 14px 12px !important;
-            border: none !important;
-            border-bottom: 3px solid var(--shadow-color) !important;
-        }
-        table.dataTable.table-neo thead th:first-child { border-top-left-radius: 10px; }
-        table.dataTable.table-neo thead th:last-child  { border-top-right-radius: 10px; }
-        table.dataTable.table-neo tbody td {
-            padding: 12px !important;
-            font-size: 13.5px;
-            border: none !important;
-            border-bottom: 1px solid rgba(0,0,0,0.07) !important;
-            vertical-align: middle !important;
-        }
-        table.dataTable.table-neo tbody tr:last-child td { border-bottom: none !important; }
-        table.dataTable.table-neo tbody tr:hover td { background: rgba(0,0,0,0.025); }
 
-        .cell-id {
+        /* WRAP DO LOGO (COM FALLBACK) */
+        .empresa-card-logo-wrap {
+            position: relative;
+            width: 130px;
+            height: 130px;
+            flex-shrink: 0;
+        }
+        .empresa-card-logo {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border: 3px solid var(--shadow-color);
+            border-radius: 14px;
+            background: #fff;
+            padding: 8px;
+            box-shadow: 4px 4px 0 0 var(--shadow-color);
+            display: block;
+        }
+        .empresa-card-logo-fallback {
+            display: none;
+            width: 100%;
+            height: 100%;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.05);
+            border: 3px dashed var(--shadow-color);
+            border-radius: 14px;
+            color: var(--text-color);
+            opacity: 0.35;
+            font-size: 3rem;
+        }
+
+        /* INFO */
+        .empresa-card-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .empresa-card-title {
+            margin: 0 0 8px;
+            font-size: 1.25rem;
+            font-weight: 900;
+            letter-spacing: -0.3px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .empresa-card-title .cell-id {
             font-family: 'SFMono-Regular', Consolas, monospace;
-            font-size: 0.75rem;
-            background: rgba(0,0,0,0.06);
-            padding: 3px 8px;
+            font-size: 0.72rem;
+            background: rgba(0,0,0,0.08);
+            padding: 3px 9px;
             border-radius: 6px;
             font-weight: 800;
+            flex-shrink: 0;
         }
-        .cell-empresa {
+        .empresa-card-title .versao-tag {
+            font-size: 0.68rem;
+            background: var(--primary);
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 20px;
             font-weight: 800;
-            color: var(--text-color);
+            border: 2px solid var(--shadow-color);
+            flex-shrink: 0;
         }
-        .cell-empresa small {
-            display: block;
-            font-size: 0.7rem;
+
+        .empresa-card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 22px;
+            font-size: 0.86rem;
             color: var(--text-color);
-            opacity: 0.55;
+            opacity: 0.85;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .empresa-card-meta .meta-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .empresa-card-meta i {
+            color: var(--primary);
+            font-size: 0.82rem;
+            opacity: 0.9;
+        }
+        .empresa-card-meta .meta-uf {
+            background: rgba(0,0,0,0.08);
+            padding: 1px 7px;
+            border-radius: 5px;
+            font-size: 0.72rem;
+            font-weight: 800;
+        }
+        .empresa-card-meta .empty {
+            opacity: 0.4;
             font-weight: 500;
-            margin-top: 2px;
         }
+
         .badge-users {
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: 5px;
             background: var(--info);
             color: #fff;
-            padding: 3px 10px;
+            padding: 4px 12px;
             border-radius: 20px;
             font-weight: 800;
-            font-size: 0.7rem;
+            font-size: 0.76rem;
             border: 2px solid var(--shadow-color);
             box-shadow: 2px 2px 0 0 var(--shadow-color);
         }
         .badge-users.zero {
             background: rgba(0,0,0,0.08);
             color: var(--text-color);
-            opacity: 0.5;
+            opacity: 0.55;
             box-shadow: none;
         }
 
-        /* DataTables */
-        .dataTables_wrapper .dataTables_filter { display: none; }
-        .dataTables_wrapper .dataTables_length,
-        .dataTables_wrapper .dataTables_info {
-            padding: 12px 8px !important;
-            font-size: 13px;
-            font-weight: 600;
+        /* AÇÕES DO CARD */
+        .empresa-card-actions {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        /* EMPTY */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            background: var(--card-bg);
+            border: 3px dashed var(--shadow-color);
+            border-radius: 18px;
             color: var(--text-color);
         }
-        .dataTables_wrapper .dataTables_length select {
-            border: 2px solid var(--shadow-color);
-            border-radius: 8px;
-            padding: 4px 8px;
-            background: #fff;
+        .empty-state i { font-size: 3.5rem; color: var(--primary); opacity: 0.4; display: block; margin-bottom: 14px; }
+        .empty-state h3 { font-weight: 900; margin: 0 0 6px; }
+        .empty-state p { opacity: 0.65; font-weight: 500; margin: 0 0 20px; }
+
+        /* NO RESULT (busca sem resultados) */
+        .no-result {
+            display: none;
+            text-align: center;
+            padding: 40px 20px;
+            background: var(--card-bg);
+            border: 3px dashed var(--shadow-color);
+            border-radius: 18px;
             color: var(--text-color);
-            font-weight: 700;
-            margin: 0 4px;
         }
-        .dataTables_wrapper .dataTables_paginate { padding: 12px 8px !important; }
-        .dataTables_wrapper .dataTables_paginate .paginate_button {
-            color: var(--text-color) !important;
-            border: 2px solid var(--shadow-color) !important;
-            border-radius: 8px !important;
-            padding: 5px 12px !important;
-            margin: 0 2px !important;
-            font-weight: 700 !important;
-            background: #fff !important;
-            transition: all 0.15s !important;
-            font-size: 13px;
-        }
-        .dataTables_wrapper .dataTables_paginate .paginate_button:hover {
-            background: var(--primary) !important;
-            color: #fff !important;
-            transform: translateY(-2px);
-            box-shadow: 3px 3px 0 0 var(--shadow-color);
-        }
-        .dataTables_wrapper .dataTables_paginate .paginate_button.current,
-        .dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
-            background: var(--primary) !important;
-            color: #fff !important;
-            border-color: var(--shadow-color) !important;
-            box-shadow: 3px 3px 0 0 var(--shadow-color);
-        }
-        .dataTables_wrapper .dataTables_paginate .paginate_button.disabled {
-            opacity: 0.4;
-            transform: none;
-            box-shadow: none;
-        }
-        .dataTables_wrapper .dataTables_empty {
-            padding: 40px 20px !important;
-            font-weight: 700 !important;
-            opacity: 0.6 !important;
-            font-style: italic;
-        }
+        .no-result.visible { display: block; }
+        .no-result i { font-size: 2.5rem; opacity: 0.35; display: block; margin-bottom: 10px; }
+        .no-result p { margin: 0; font-weight: 700; opacity: 0.7; }
 
         /* MODAL */
         .modal-content {
@@ -583,10 +651,7 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
             align-items: center;
             gap: 10px;
         }
-        .modal-header .btn-close {
-            filter: invert(1) brightness(2);
-            opacity: 1;
-        }
+        .modal-header .btn-close { filter: invert(1) brightness(2); opacity: 1; }
         .modal-body {
             padding: 22px;
             background: var(--card-bg);
@@ -653,7 +718,35 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
         .form-control::placeholder { color: #b8bcc4; font-weight: 400; }
         textarea.form-control { resize: vertical; min-height: 70px; }
 
-        /* Banner master */
+        .logo-preview-wrap {
+            display: none;
+            margin-top: 8px;
+            align-items: center;
+            gap: 12px;
+            padding: 8px;
+            background: rgba(0,0,0,0.03);
+            border: 2px dashed rgba(0,0,0,0.15);
+            border-radius: 10px;
+        }
+        .logo-preview-wrap.visible { display: flex; }
+        .logo-preview-img {
+            max-height: 80px;
+            max-width: 160px;
+            object-fit: contain;
+            border: 2px solid var(--shadow-color);
+            border-radius: 8px;
+            background: #fff;
+            padding: 4px;
+            box-shadow: 2px 2px 0 0 var(--shadow-color);
+        }
+        .logo-preview-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            opacity: 0.7;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
         .master-banner {
             background: rgba(245,158,11,0.1);
             border: 2px dashed var(--warning);
@@ -666,20 +759,7 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
         }
         .master-banner i { color: var(--warning); margin-right: 6px; }
 
-        /* Empty */
-        .empty-state {
-            text-align: center;
-            padding: 50px 20px;
-            background: var(--card-bg);
-            border: 3px dashed var(--shadow-color);
-            border-radius: 16px;
-            color: var(--text-color);
-        }
-        .empty-state i { font-size: 3rem; color: var(--primary); opacity: 0.4; display: block; margin-bottom: 12px; }
-        .empty-state h3 { font-weight: 900; margin: 0 0 6px; }
-        .empty-state p { opacity: 0.65; font-weight: 500; margin: 0 0 18px; }
-
-        /* Responsivo */
+        /* RESPONSIVO */
         @media (max-width: 768px) {
             .app-header { padding: 10px 0; }
             .header-inner { padding: 0 12px; }
@@ -693,6 +773,33 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
             .toolbar-left, .toolbar-right { width: 100%; }
             .btn-neo { flex: 1; justify-content: center; }
             .modal-body { padding: 16px; max-height: 72vh; }
+
+            .empresa-card {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 14px;
+                padding: 16px;
+            }
+            .empresa-card-logo-wrap {
+                width: 100px;
+                height: 100px;
+                align-self: center;
+            }
+            .empresa-card-title {
+                font-size: 1.05rem;
+                justify-content: center;
+                text-align: center;
+            }
+            .empresa-card-meta {
+                justify-content: center;
+                font-size: 0.8rem;
+            }
+            .empresa-card-actions {
+                width: 100%;
+                justify-content: center;
+                padding-top: 12px;
+                border-top: 2px dashed rgba(0,0,0,0.1);
+            }
         }
     </style>
 </head>
@@ -701,8 +808,10 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
 <header class="app-header">
     <div class="header-inner">
         <div class="header-brand">
-            <img src="<?= htmlspecialchars($themeSafe['primary'] ? 'img/logosunny.jpg' : 'img/logosunny.jpg') ?>"
-                 alt="Logo" class="header-logo" onerror="this.style.display='none'">
+            <img src="<?= htmlspecialchars($headerLogoUrl, ENT_QUOTES, 'UTF-8') ?>"
+                 alt="Logo"
+                 class="header-logo"
+                 onerror="this.onerror=null; this.src='img/logosunny.jpg';">
             <div class="header-title">
                 <h1><i class="fas fa-building me-2"></i> Gestão de Empresas</h1>
                 <p>Cadastro e configuração · SunnyImob</p>
@@ -764,87 +873,117 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
             </button>
         </div>
     <?php else: ?>
-        <div class="table-card">
-            <table id="tabelaEmpresas" class="table table-neo" style="width:100%">
-                <thead>
-                    <tr>
-                        <th style="width: 70px;">ID</th>
-                        <th>Empresa</th>
-                        <th style="width: 160px;">CNPJ</th>
-                        <th style="width: 200px;">Cidade / UF</th>
-                        <th style="width: 180px;">Responsável</th>
-                        <th style="width: 100px;">Usuários</th>
-                        <th style="width: 110px;">Ações</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($empresas as $e): 
-                        $id = (int)$e['IdEmp'];
-                        $total = (int)($e['TotalUsuarios'] ?? 0);
-                    ?>
-                        <tr>
-                            <td><span class="cell-id">#<?= str_pad($id, 3, '0', STR_PAD_LEFT) ?></span></td>
-                            <td>
-                                <div class="cell-empresa">
-                                    <?= htmlspecialchars($e['EmpresaSunny'] ?: '—') ?>
-                                    <?php if (!empty($e['Conf_Versao'])): ?>
-                                        <small>v<?= htmlspecialchars($e['Conf_Versao']) ?></small>
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                            <td>
-                                <span style="font-family:'SFMono-Regular',Consolas,monospace;font-size:0.78rem;opacity:0.75;">
-                                    <?= htmlspecialchars($e['CNPJ'] ?: '—') ?>
+
+        <div class="cards-list" id="cardsList">
+            <?php foreach ($empresas as $e):
+                $id        = (int)$e['IdEmp'];
+                $total     = (int)($e['TotalUsuarios'] ?? 0);
+                $logoUrl   = resolverLogo($e['Conf_ImgLogo'] ?? '', 'img/logosunny.jpg');
+                $nome      = $e['EmpresaSunny'] ?: "Empresa #$id";
+                $cidadeUf  = trim((string)($e['Cidade'] ?? ''));
+                $uf        = trim((string)($e['UF'] ?? ''));
+                $cnpj      = trim((string)($e['CNPJ'] ?? ''));
+                $resp      = trim((string)($e['Responsavel1'] ?? ''));
+                $email     = trim((string)($e['Email1'] ?? ''));
+                $tel       = trim((string)($e['Telefone1'] ?? ''));
+                $versao    = trim((string)($e['Conf_Versao'] ?? ''));
+
+                // string "searchable" para o filtro do JS
+                $searchBlob = mb_strtolower(implode(' ', [$nome, $cnpj, $cidadeUf, $uf, $resp, $email, $tel]));
+            ?>
+                <div class="empresa-card"
+                     data-search="<?= htmlspecialchars($searchBlob, ENT_QUOTES, 'UTF-8') ?>">
+
+                    <!-- LOGO GRANDE -->
+                    <div class="empresa-card-logo-wrap">
+                        <img src="<?= htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8') ?>"
+                             alt="Logo <?= htmlspecialchars($nome, ENT_QUOTES, 'UTF-8') ?>"
+                             class="empresa-card-logo"
+                             loading="lazy"
+                             onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div class="empresa-card-logo-fallback" title="Sem logo cadastrado">
+                            <i class="fas fa-building"></i>
+                        </div>
+                    </div>
+
+                    <!-- INFO -->
+                    <div class="empresa-card-info">
+                        <h3 class="empresa-card-title">
+                            <span class="cell-id">#<?= str_pad($id, 3, '0', STR_PAD_LEFT) ?></span>
+                            <?= htmlspecialchars($nome, ENT_QUOTES, 'UTF-8') ?>
+                            <?php if ($versao !== ''): ?>
+                                <span class="versao-tag">v<?= htmlspecialchars($versao, ENT_QUOTES, 'UTF-8') ?></span>
+                            <?php endif; ?>
+                        </h3>
+
+                        <div class="empresa-card-meta">
+                            <?php if ($cnpj !== ''): ?>
+                                <span class="meta-item">
+                                    <i class="fas fa-id-card"></i> <?= htmlspecialchars($cnpj, ENT_QUOTES, 'UTF-8') ?>
                                 </span>
-                            </td>
-                            <td>
-                                <?php if (!empty($e['Cidade']) || !empty($e['UF'])): ?>
-                                    <?= htmlspecialchars($e['Cidade'] ?? '') ?>
-                                    <?php if (!empty($e['UF'])): ?>
-                                        <span style="background:rgba(0,0,0,0.08);padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:800;margin-left:4px;">
-                                            <?= htmlspecialchars($e['UF']) ?>
-                                        </span>
+                            <?php endif; ?>
+
+                            <?php if ($cidadeUf !== '' || $uf !== ''): ?>
+                                <span class="meta-item">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <?= htmlspecialchars($cidadeUf, ENT_QUOTES, 'UTF-8') ?>
+                                    <?php if ($uf !== ''): ?>
+                                        <span class="meta-uf"><?= htmlspecialchars($uf, ENT_QUOTES, 'UTF-8') ?></span>
                                     <?php endif; ?>
-                                <?php else: ?>
-                                    <span style="opacity:0.4;">—</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <?php if (!empty($e['Responsavel1'])): ?>
-                                    <div style="font-weight:700;font-size:0.82rem;"><?= htmlspecialchars($e['Responsavel1']) ?></div>
-                                    <?php if (!empty($e['Email1'])): ?>
-                                        <div style="font-size:0.72rem;opacity:0.65;"><?= htmlspecialchars($e['Email1']) ?></div>
-                                    <?php endif; ?>
-                                <?php else: ?>
-                                    <span style="opacity:0.4;">—</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
+                                </span>
+                            <?php endif; ?>
+
+                            <?php if ($resp !== ''): ?>
+                                <span class="meta-item">
+                                    <i class="fas fa-user-tie"></i> <?= htmlspecialchars($resp, ENT_QUOTES, 'UTF-8') ?>
+                                </span>
+                            <?php endif; ?>
+
+                            <?php if ($email !== ''): ?>
+                                <span class="meta-item">
+                                    <i class="fas fa-envelope"></i> <?= htmlspecialchars($email, ENT_QUOTES, 'UTF-8') ?>
+                                </span>
+                            <?php endif; ?>
+
+                            <?php if ($tel !== ''): ?>
+                                <span class="meta-item">
+                                    <i class="fas fa-phone"></i> <?= htmlspecialchars($tel, ENT_QUOTES, 'UTF-8') ?>
+                                </span>
+                            <?php endif; ?>
+
+                            <span class="meta-item">
                                 <span class="badge-users <?= $total === 0 ? 'zero' : '' ?>">
-                                    <i class="fas fa-users"></i> <?= $total ?>
+                                    <i class="fas fa-users"></i> <?= $total ?> <?= $total === 1 ? 'usuário' : 'usuários' ?>
                                 </span>
-                            </td>
-                            <td>
-                                <div style="display:flex;gap:6px;">
-                                    <button type="button" class="btn-icon edit" onclick="abrirEdicao(<?= $id ?>)" title="Editar">
-                                        <i class="fas fa-pen"></i>
-                                    </button>
-                                    <form method="post" style="margin:0;" onsubmit="return confirmarExclusao(this)">
-                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_sunnyemp']) ?>">
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="IdEmp" value="<?= $id ?>">
-                                        <button type="submit" class="btn-icon delete" title="Excluir"
-                                            <?= ($id === 1) ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : '' ?>>
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- AÇÕES -->
+                    <div class="empresa-card-actions">
+                        <button type="button" class="btn-icon edit" onclick="abrirEdicao(<?= $id ?>)" title="Editar">
+                            <i class="fas fa-pen"></i>
+                        </button>
+                        <form method="post" style="margin:0;" onsubmit="return confirmarExclusao(this)">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_sunnyemp']) ?>">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="IdEmp" value="<?= $id ?>">
+                            <button type="submit" class="btn-icon delete" title="Excluir"
+                                <?= ($id === 1) ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : '' ?>>
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            <?php endforeach; ?>
         </div>
+
+        <!-- ESTADO "SEM RESULTADOS" (busca) -->
+        <div class="no-result" id="noResult">
+            <i class="fas fa-search-minus"></i>
+            <p>Nenhuma empresa corresponde à busca.</p>
+        </div>
+
     <?php endif; ?>
 
 </div>
@@ -873,7 +1012,6 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
                         <strong>Empresa Master (#1)</strong> — pode ser editada, mas não excluída.
                     </div>
 
-                    <!-- DADOS PRINCIPAIS -->
                     <div class="form-section-title">
                         <i class="fas fa-building"></i> Dados da Empresa
                     </div>
@@ -944,7 +1082,6 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
                         </div>
                     </div>
 
-                    <!-- IMAGENS E PASTAS -->
                     <div class="form-section-title">
                         <i class="fas fa-folder"></i> Imagens e Pastas
                     </div>
@@ -955,8 +1092,13 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
                                 <i class="fas fa-image"></i> Caminho do Logo
                             </label>
                             <input type="text" class="form-control" id="field_Conf_ImgLogo" name="Conf_ImgLogo"
-                                   placeholder="img/logosunny.jpg"
+                                   placeholder="logosunny.jpg ou img/logosunny.jpg"
                                    style="font-family:'SFMono-Regular',Consolas,monospace;font-size:0.82rem;">
+                            <div class="logo-preview-wrap" id="logoPreviewWrap">
+                                <span class="logo-preview-label"><i class="fas fa-eye"></i> Preview</span>
+                                <img id="logoPreview" class="logo-preview-img" src="" alt="Preview do logo"
+                                     onerror="document.getElementById('logoPreviewWrap').classList.remove('visible');">
+                            </div>
                         </div>
                         <div class="col-md-6">
                             <label class="field-label" for="field_Conf_ImgPontoMapa">
@@ -992,7 +1134,6 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
                         </div>
                     </div>
 
-                    <!-- SISTEMA -->
                     <div class="form-section-title">
                         <i class="fas fa-cog"></i> Configurações do Sistema
                     </div>
@@ -1035,55 +1176,60 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
     </div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
 
 <script>
 (function () {
     'use strict';
 
     const EMPRESAS = <?= $empresasJson ?>;
+    const modalEl  = document.getElementById('modalEmpresa');
+    const modal    = new bootstrap.Modal(modalEl);
 
-    const modalEl = document.getElementById('modalEmpresa');
-    const modal   = new bootstrap.Modal(modalEl);
-
-    // DATATABLE
-    let table = null;
-    if (document.getElementById('tabelaEmpresas')) {
-        table = $('#tabelaEmpresas').DataTable({
-            language: { url: "//cdn.datatables.net/plug-ins/1.13.7/i18n/pt-BR.json" },
-            pageLength: 25,
-            lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "Todos"]],
-            ordering: true,
-            order: [[1, 'asc']],
-            columnDefs: [
-                { orderable: false, targets: [6] },
-                { searchable: false, targets: [6] }
-            ]
-        });
-    }
-
-    // BUSCA
-    const $search = document.getElementById('searchInput');
-    const $clear  = document.getElementById('searchClear');
+    // ============================================================
+    // BUSCA NOS CARDS (filtro em tempo real)
+    // ============================================================
+    const $search    = document.getElementById('searchInput');
+    const $clear     = document.getElementById('searchClear');
+    const $cardsList = document.getElementById('cardsList');
+    const $noResult  = document.getElementById('noResult');
     let searchTimer;
+
+    function filtrarCards(termo) {
+        if (!$cardsList) return;
+        const termoNorm = termo.trim().toLowerCase();
+        const cards = $cardsList.querySelectorAll('.empresa-card');
+        let visiveis = 0;
+
+        cards.forEach(function (card) {
+            const blob = (card.getAttribute('data-search') || '').toLowerCase();
+            const ok = termoNorm === '' || blob.indexOf(termoNorm) !== -1;
+            card.style.display = ok ? '' : 'none';
+            if (ok) visiveis++;
+        });
+
+        if ($noResult) {
+            $noResult.classList.toggle('visible', visiveis === 0 && termoNorm !== '');
+        }
+    }
 
     if ($search) {
         $search.addEventListener('input', function () {
             const v = this.value;
-            $clear.classList.toggle('visible', v.length > 0);
+            if ($clear) $clear.classList.toggle('visible', v.length > 0);
             clearTimeout(searchTimer);
-            searchTimer = setTimeout(function () {
-                if (table) table.search(v).draw();
-            }, 150);
+            searchTimer = setTimeout(function () { filtrarCards(v); }, 120);
         });
 
         $search.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') { this.value = ''; this.dispatchEvent(new Event('input')); }
+            if (e.key === 'Escape') {
+                this.value = '';
+                this.dispatchEvent(new Event('input'));
+            }
         });
+    }
 
+    if ($clear && $search) {
         $clear.addEventListener('click', function () {
             $search.value = '';
             $search.dispatchEvent(new Event('input'));
@@ -1091,17 +1237,54 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
         });
     }
 
-    // CRIAR
+    // ============================================================
+    // PREVIEW DO LOGO NO MODAL
+    // ============================================================
+    function resolverPathLogo(val) {
+        val = (val || '').trim();
+        if (!val) return '';
+        return (val.indexOf('/') !== -1) ? val : 'img/' + val;
+    }
+
+    function atualizarPreviewLogo() {
+        const field = document.getElementById('field_Conf_ImgLogo');
+        const wrap  = document.getElementById('logoPreviewWrap');
+        const img   = document.getElementById('logoPreview');
+        if (!field || !wrap || !img) return;
+
+        const url = resolverPathLogo(field.value);
+        if (!url) {
+            wrap.classList.remove('visible');
+            img.removeAttribute('src');
+            return;
+        }
+
+        img.onerror = function () {
+            wrap.classList.remove('visible');
+            this.onerror = null;
+        };
+        img.onload = function () {
+            wrap.classList.add('visible');
+        };
+        img.src = url;
+    }
+
+    document.getElementById('field_Conf_ImgLogo')?.addEventListener('input', atualizarPreviewLogo);
+    document.getElementById('field_Conf_ImgLogo')?.addEventListener('change', atualizarPreviewLogo);
+
+    // ============================================================
+    // CRIAR / EDITAR
+    // ============================================================
     window.abrirCriacao = function () {
         document.getElementById('modalTitle').innerHTML = '<i class="fas fa-plus-circle"></i> Nova Empresa';
         document.getElementById('formAction').value = 'create';
         document.getElementById('formIdEmp').value = '';
         document.getElementById('formEmpresa').reset();
         document.getElementById('masterBanner').style.display = 'none';
+        atualizarPreviewLogo();
         modal.show();
     };
 
-    // EDITAR
     window.abrirEdicao = function (id) {
         const emp = EMPRESAS.find(e => Number(e.IdEmp) === Number(id));
         if (!emp) return;
@@ -1123,6 +1306,7 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
             if (el) el.value = emp[k] ?? '';
         });
 
+        atualizarPreviewLogo();
         modal.show();
     };
 

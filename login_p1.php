@@ -1,5 +1,6 @@
 <?php
-// login_p1.php - Versão com tema neobrutalista
+// login_p1.php - Versão com tema neobrutalista + logo da empresa na tela de loading
+// Correção: caminho do logo tratado (pasta vs caminho completo + URL-safe)
 session_start();
 
 require_once "conn.php";
@@ -8,7 +9,7 @@ require_once 'send_email.php';
 require_once 'theme_config.php'; // <-- CARREGA O TEMA
 
 // Configuração da Manutenção
-$sistema_id = 'sunny'; 
+$sistema_id = 'sunny';
 $arquivo_manut = $_SERVER['DOCUMENT_ROOT'] . "/manut/manut_{$sistema_id}.txt";
 
 // =================================================================================
@@ -38,12 +39,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $ativo   = (int)($userData['Ativo'] ?? 0);
         $licenca = (bool)($userData['Licenca'] ?? false);
 
+        // Limpa resíduo de sessão anterior (troca de usuário na mesma máquina)
+        unset(
+            $_SESSION['empresa_carregada'],
+            $_SESSION['Conf_ImgLogo'],
+            $_SESSION['EmpresaSunny'],
+            $_SESSION['Conf_CorPrimaria'],
+            $_SESSION['Conf_CorSecundaria'],
+            $_SESSION['Conf_CorFundo']
+        );
+
+        // Dados do usuário na sessão
         $_SESSION['UserId']    = (int)$userData['UserId'];
-        $_SESSION['IdEmp']    = (int)$userData['IdEmp'];
+        $_SESSION['IdEmp']     = (int)$userData['IdEmp'];
         $_SESSION['Usuario']   = $userData['Usuario'];
         $_SESSION['Permissao'] = Nz($userData['Permissao']);
         $_SESSION['Ativo']     = $ativo;
         $_SESSION['Licenca']   = $licenca;
+
+        // ==== carrega o logo/cores da empresa deste usuário ====
+        // Usa $pdo já criado em conn.php; NÃO abre nova conexão.
+        require __DIR__ . '/config_empresa.php';
 
         // --- ENVIO DE E-MAIL (Lógica preservada) ---
         $nomeExibido = Nz($userData['Nome'], $userData['Usuario']);
@@ -52,12 +68,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // enviarEmailSGVendas($destinatario, $assunto, $mensagemHTML);
 
         if ($ativo === 1 && $licenca === true) {
+
+            // ---------------------------------------------------------------
+            // Logo e nome da empresa para a tela de loading
+            // ---------------------------------------------------------------
+            $confLogo    = $_SESSION['Conf_ImgLogo'] ?? '';
+            $nomeEmpresa = !empty($_SESSION['EmpresaSunny'])
+                ? $_SESSION['EmpresaSunny']
+                : 'SunnyImob';
+
+            // Se o banco guardou caminho completo (tem '/'), usa direto.
+            // Se guardou só o nome do arquivo, prefixa a pasta 'img/'.
+            if ($confLogo !== '') {
+                $logoLoading = (strpos($confLogo, '/') !== false)
+                    ? $confLogo                  // ex: uploads/logos/logo.png
+                    : 'img/' . $confLogo;        // ex: logo.png → img/logo.png
+            } else {
+                $logoLoading = 'img/sunnyimob.jpg'; // fallback
+            }
+
+            // Codifica cada segmento do caminho para não quebrar com espaço/acento
+            $logoUrl = implode('/', array_map('rawurlencode', explode('/', $logoLoading)));
+
+            // --- DEBUG (descomente se precisar investigar) ---
+            // echo '<pre style="background:#fff;padding:1rem;border:1px solid #000;">';
+            // var_export([
+            //     'Conf_ImgLogo (sessão)' => $confLogo,
+            //     'logoLoading'           => $logoLoading,
+            //     'logoUrl'               => $logoUrl,
+            //     'file_exists'           => file_exists(__DIR__ . '/' . $logoLoading),
+            // ]);
+            // echo '</pre>';
+            // ---------------------------------------------------------------
+
             ?>
             <!DOCTYPE html>
             <html lang="pt-br">
             <head>
                 <meta charset="UTF-8">
-                <title>Redirecionando...</title>
+                <title>Carregando <?= htmlspecialchars($nomeEmpresa, ENT_QUOTES, 'UTF-8') ?>...</title>
                 <style>
                     :root {
                         --primary: <?php echo $theme['primary']; ?>;
@@ -65,17 +114,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         --bg-body: <?php echo $theme['bg_body']; ?>;
                         --text-color: <?php echo $theme['text_color']; ?>;
                     }
-                    body { margin:0; background:var(--bg-body); display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; font-family:'Inter',system-ui,sans-serif; color:var(--text-color); }
-                    .logo-load { max-height:60vh; margin-bottom:2rem; border:4px solid var(--shadow-color); border-radius:16px; box-shadow:6px 6px 0px 0px var(--shadow-color); }
-                    .spinner { width:60px; height:60px; border:8px solid #f3f3f3; border-top:8px solid var(--primary); border-radius:50%; animation:spin 1.2s linear infinite; }
-                    @keyframes spin { to { transform:rotate(360deg); } }
-                    p { color:var(--text-color); font-size:1.4rem; margin-top:1.8rem; font-weight:600; }
+                    body {
+                        margin: 0;
+                        background: var(--bg-body);
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        font-family: 'Inter', system-ui, sans-serif;
+                        color: var(--text-color);
+                    }
+                    .logo-load {
+                        max-height: 60vh;
+                        max-width: 80vw;
+                        object-fit: contain;
+                        margin-bottom: 2rem;
+                        border: 4px solid var(--shadow-color);
+                        border-radius: 16px;
+                        box-shadow: 6px 6px 0px 0px var(--shadow-color);
+                        background: #fff;
+                    }
+                    .spinner {
+                        width: 60px;
+                        height: 60px;
+                        border: 8px solid #f3f3f3;
+                        border-top: 8px solid var(--primary);
+                        border-radius: 50%;
+                        animation: spin 1.2s linear infinite;
+                    }
+                    @keyframes spin { to { transform: rotate(360deg); } }
+                    p {
+                        color: var(--text-color);
+                        font-size: 1.4rem;
+                        margin-top: 1.8rem;
+                        font-weight: 600;
+                        text-align: center;
+                    }
                 </style>
             </head>
             <body>
-                <img src="img/sunnyimob.jpg" class="logo-load" alt="SunnyImob">
+                <img src="<?= htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8') ?>"
+                     class="logo-load"
+                     alt="<?= htmlspecialchars($nomeEmpresa, ENT_QUOTES, 'UTF-8') ?>"
+                     onerror="this.src='img/sunnyimob.jpg';">
                 <div class="spinner"></div>
-                <p>Carregando sistema...</p>
+                <p>Carregando <?= htmlspecialchars($nomeEmpresa, ENT_QUOTES, 'UTF-8') ?>...</p>
                 <script>setTimeout(() => { window.location.href = 'mainpage_v66a.php'; }, 2000);</script>
             </body>
             </html>

@@ -10,7 +10,7 @@ require_once 'conn.php';
 require_once 'theme_config.php';
 
 // ============================================================
-// LOGIN (bug #1)
+// LOGIN
 // ============================================================
 if (empty($_SESSION['Usuario'])) {
     header("Location: login_p1.php");
@@ -18,7 +18,7 @@ if (empty($_SESSION['Usuario'])) {
 }
 
 // ============================================================
-// CONEXÃO (bug #6)
+// CONEXÃO
 // ============================================================
 if (isset($conn) && $conn instanceof PDO)      $db = $conn;
 elseif (isset($pdo) && $pdo instanceof PDO)    $db = $pdo;
@@ -37,7 +37,7 @@ $themeDefaults = [
 $themeSafe = array_merge($themeDefaults, isset($theme) && is_array($theme) ? $theme : []);
 
 // ============================================================
-// CSRF (bug #2)
+// CSRF
 // ============================================================
 if (empty($_SESSION['csrf_img'])) {
     $_SESSION['csrf_img'] = bin2hex(random_bytes(32));
@@ -45,7 +45,7 @@ if (empty($_SESSION['csrf_img'])) {
 $CSRF = $_SESSION['csrf_img'];
 
 // ============================================================
-// PASTA DESTINO — relativa ao arquivo (bug #3, #12)
+// PASTA DESTINO
 // ============================================================
 $pastaRelativa = 'card/';
 $pastaDestino  = __DIR__ . '/' . $pastaRelativa;
@@ -78,7 +78,7 @@ function processarImagem($tmpPath, $destPath, $maxDim = 1200) {
 
     $dst   = imagecreatetruecolor($newW, $newH);
     $white = imagecolorallocate($dst, 255, 255, 255);
-    imagefill($dst, 0, 0, $white); // fundo branco para PNG transparente
+    imagefill($dst, 0, 0, $white);
     imagecopyresampled($dst, $src, 0, 0, 0, 0, $newW, $newH, $w, $h);
 
     $ok = @imagejpeg($dst, $destPath, 88);
@@ -89,7 +89,7 @@ function processarImagem($tmpPath, $destPath, $maxDim = 1200) {
 }
 
 // ============================================================
-// ID: prioriza POST (hidden) > GET > último registro (bug #8)
+// ID DO EMPREENDIMENTO
 // ============================================================
 $idEmpreendimento = (int)($_POST['id'] ?? $_GET['Empreend_id'] ?? 0);
 
@@ -101,24 +101,34 @@ try {
     }
 
     $stmtLista = $db->query("
-        SELECT Empreend_ID, NomeEmpreendimento, Localidade
-        FROM empreendimento
-        ORDER BY NomeEmpreendimento ASC
+        SELECT e.Empreend_ID, e.NomeEmpreendimento, e.Localidade, 
+               COALESCE(emp.NomeEmpresa, e.NomeEmpresa) AS NomeEmpresaReal
+        FROM empreendimento e
+        LEFT JOIN empresa emp ON e.Empresa_ID = emp.Empresa_ID
+        ORDER BY e.NomeEmpreendimento ASC
     ");
     $listaEmpreendimentos = $stmtLista->fetchAll(PDO::FETCH_ASSOC);
 
     $nomeEmpreendimento   = '';
     $localidade           = '';
+    $nomeEmpresa          = '';
     $empreendimentoValido = false;
 
     if ($idEmpreendimento > 0) {
-        $stmt = $db->prepare("SELECT NomeEmpreendimento, Localidade FROM empreendimento WHERE Empreend_ID = ?");
+        $stmt = $db->prepare("
+            SELECT e.NomeEmpreendimento, e.Localidade, 
+                   COALESCE(emp.NomeEmpresa, e.NomeEmpresa) AS NomeEmpresaReal
+            FROM empreendimento e
+            LEFT JOIN empresa emp ON e.Empresa_ID = emp.Empresa_ID
+            WHERE e.Empreend_ID = ?
+        ");
         $stmt->execute([$idEmpreendimento]);
         $empreendimento = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($empreendimento) {
             $nomeEmpreendimento   = $empreendimento['NomeEmpreendimento'];
             $localidade           = $empreendimento['Localidade'] ?? '';
+            $nomeEmpresa          = $empreendimento['NomeEmpresaReal'] ?? '';
             $empreendimentoValido = true;
         }
     }
@@ -127,14 +137,13 @@ try {
 }
 
 // ============================================================
-// UPLOAD (bugs #3, #4, #5, #13)
+// UPLOAD
 // ============================================================
 $msg     = null;
 $msgType = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // CSRF
     if (!hash_equals($CSRF, $_POST['csrf_token'] ?? '')) {
         $msg = 'Falha de segurança (CSRF). Recarregue a página.';
         $msgType = 'danger';
@@ -153,7 +162,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg = 'Imagem muito grande. Máximo 8 MB.';
             $msgType = 'danger';
         } else {
-            // MIME real via finfo
             $finfo = finfo_open(FILEINFO_MIME_TYPE);
             $mime  = finfo_file($finfo, $file['tmp_name']);
             finfo_close($finfo);
@@ -169,7 +177,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if (processarImagem($file['tmp_name'], $caminhoFinal)) {
                     $_SESSION['MsgSucesso'] = 'Imagem atualizada com sucesso!';
-                    // PRG pattern — evita reenvio no F5
                     $redirectUrl = $_SERVER['PHP_SELF'] . '?Empreend_id=' . $idEmpreendimento;
                     header("Location: " . $redirectUrl);
                     exit;
@@ -320,6 +327,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .empreend-item.active strong,
         .empreend-item.active small { color: #fff; opacity: 0.95; }
+        .empreend-item.active .badge-localidade { background: rgba(255,255,255,0.2); color: #fff; }
 
         .thumb-list {
             width: 56px;
@@ -354,7 +362,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            margin-bottom: 2px;
+            margin-bottom: 3px;
         }
         .item-info small {
             display: block;
@@ -364,6 +372,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            margin-bottom: 2px;
+        }
+        .badge-localidade {
+            display: inline-block;
+            background: rgba(0,0,0,0.06);
+            color: var(--text-color);
+            font-size: 0.6rem;
+            font-weight: 800;
+            padding: 1px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         /* ============================================================ */
@@ -389,15 +409,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             padding: 16px 22px;
             border-bottom: 3px solid var(--shadow-color);
         }
+        .header-tag {
+            display: inline-block;
+            background: var(--shadow-color);
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 900;
+            padding: 4px 14px;
+            border-radius: 20px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            box-shadow: 2px 2px 0 rgba(0,0,0,0.2);
+        }
         .card-panel-header h2 {
             margin: 0;
-            font-size: 1.2rem;
+            font-size: 1.3rem;
             font-weight: 900;
             letter-spacing: -0.3px;
             text-transform: uppercase;
+            line-height: 1.2;
+        }
+        .card-panel-header .empresa-nome {
+            font-size: 0.9rem;
+            color: #ffd5dc;
+            font-weight: 800;
+            text-transform: uppercase;
+            display: block;
+            margin-bottom: 4px;
         }
         .card-panel-header p {
-            margin: 4px 0 0;
+            margin: 6px 0 0;
             font-size: 0.78rem;
             opacity: 0.9;
             font-weight: 600;
@@ -616,7 +658,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         /* ============================================================ */
-        /* RESPONSIVO (bug #14)                                        */
+        /* RESPONSIVO                                                   */
         /* ============================================================ */
         @media (max-width: 900px) {
             .main-wrapper {
@@ -683,10 +725,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?php endif; ?>
 
                     <div class="item-info">
+                        <!-- Localidade em destaque (badge) -->
+                        <div style="margin-bottom: 4px;">
+                            <span class="badge-localidade">
+                                <i class="fas fa-map-marker-alt me-1"></i>
+                                <?= htmlspecialchars(strtoupper($emp['Localidade'] ?: 'Não informada')) ?>
+                            </span>
+                        </div>
+                        
+                        <!-- Empresa + Empreendimento -->
                         <strong><?= htmlspecialchars($emp['NomeEmpreendimento']) ?></strong>
-                        <small>
-                            <i class="fas fa-map-marker-alt"></i>
-                            <?= htmlspecialchars($emp['Localidade'] ?: 'Não informada') ?>
+                        
+                        <small style="color: var(--info); font-weight: 800;">
+                            <i class="fas fa-building me-1"></i>
+                            <?= htmlspecialchars($emp['NomeEmpresaReal'] ?: 'Sem Empresa') ?>
                         </small>
                     </div>
                 </a>
@@ -717,16 +769,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <!-- Header do card -->
             <div class="card-panel mb-4">
-                <div class="card-panel-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-                    <div>
-                        <h2><?= htmlspecialchars($nomeEmpreendimento) ?></h2>
-                        <p>
-                            <i class="fas fa-location-arrow me-1"></i>
-                            <?= htmlspecialchars($localidade ?: 'Localidade não informada') ?>
-                            · <span style="background:rgba(0,0,0,0.2);padding:1px 8px;border-radius:6px;font-family:monospace;font-weight:800;">
-                                ID #<?= $idEmpreendimento ?>
+                <div class="card-panel-header">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+                        <div>
+                            <!-- Localidade em destaque -->
+                            <span class="header-tag">
+                                <i class="fas fa-map-marker-alt me-1"></i>
+                                <?= htmlspecialchars(strtoupper($localidade ?: 'LOCALIDADE NÃO INFORMADA')) ?>
                             </span>
-                        </p>
+                            
+                            <!-- Empresa -->
+                            <span class="empresa-nome">
+                                <?= htmlspecialchars($nomeEmpresa ?: 'SEM EMPRESA') ?>
+                            </span>
+
+                            <!-- Nome do Empreendimento -->
+                            <h2><?= htmlspecialchars($nomeEmpreendimento) ?></h2>
+                            
+                            <!-- ID -->
+                            <p style="margin-top: 6px;">
+                                <span style="background:rgba(0,0,0,0.2);padding:2px 8px;border-radius:6px;font-family:monospace;font-weight:800;">
+                                    ID #<?= $idEmpreendimento ?>
+                                </span>
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -837,7 +903,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // ============================================================
-    // Handle file (valida cliente antes de mostrar preview)
+    // Handle file
     // ============================================================
     const fotoInput = document.getElementById('foto');
     const btnSubmit = document.getElementById('btnSubmit');
@@ -871,19 +937,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         };
         reader.readAsDataURL(file);
 
-        // Sincroniza no <input type=file> via DataTransfer
         try {
             const dt = new DataTransfer();
             dt.items.add(file);
             fotoInput.files = dt.files;
         } catch (err) {
-            // Fallback silencioso para navegadores antigos
             console.warn('DataTransfer não suportado:', err);
         }
     }
 
     // ============================================================
-    // Colar (Ctrl+V) — só captura se for imagem
+    // Colar (Ctrl+V)
     // ============================================================
     window.addEventListener('paste', function (e) {
         if (!e.clipboardData) return;
@@ -907,7 +971,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // ============================================================
-    // Click na pasteArea = abrir seletor de arquivo
+    // Click na pasteArea
     // ============================================================
     const pasteArea = document.getElementById('pasteArea');
     if (pasteArea) {
@@ -915,7 +979,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (fotoInput) fotoInput.click();
         });
 
-        // Efeito visual ao colar
         window.addEventListener('paste', function () {
             pasteArea.classList.add('highlight');
             setTimeout(function () { pasteArea.classList.remove('highlight'); }, 600);
@@ -937,3 +1000,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </script>
 </body>
 </html>
+<!--  -->

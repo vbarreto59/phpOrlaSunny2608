@@ -19,6 +19,9 @@ AcoesPermitidas();
 require_once "manutencao_config.php";
 require_once "log_navegacao.php";
 
+// ==== pegar dados da empresa 09 11 2026
+require_once __DIR__ . '/config_empresa.php';
+
 protegerPagina(true);
 
 if (!registrarNavegacao($conn, $_SESSION)) {
@@ -47,7 +50,7 @@ if (is_dir($carouselPath)) {
 }
 
 // ============= 26 04 2026 - Criar as variaveis de sessao da empresa
-$idEmp = $_SESSION['IdEmp']; 
+$idEmp = $_SESSION['IdEmp'];
 CarregarConfiguracoesEmpresa($idEmp);
 
 // =======================================================
@@ -57,8 +60,8 @@ function getLocalidades() {
     global $conn;
     $localidades = [];
     try {
-        $sql = "SELECT DISTINCT Localidade FROM empreendimento 
-                WHERE Localidade IS NOT NULL 
+        $sql = "SELECT DISTINCT Localidade FROM empreendimento
+                WHERE Localidade IS NOT NULL
                 ORDER BY Localidade";
         $stmt = $conn->prepare($sql);
         $stmt->execute();
@@ -73,8 +76,8 @@ function getAnosEntrega() {
     global $conn;
     $anos = [];
     try {
-        $sql = "SELECT DISTINCT AnoEntrega FROM empreendimento 
-                WHERE AnoEntrega IS NOT NULL 
+        $sql = "SELECT DISTINCT AnoEntrega FROM empreendimento
+                WHERE AnoEntrega IS NOT NULL
                 ORDER BY AnoEntrega";
         $stmt = $conn->prepare($sql);
         $stmt->execute();
@@ -99,26 +102,54 @@ function getEmpresas() {
     return $empresas;
 }
 
-function getPremiacoesAtivas() {
+/**
+ * Busca 1 empreendimento destaque verificando OBRIGATORIAMENTE 
+ * se existe a imagem 'card/Empreend_ID.jpg' na pasta.
+ * A cada refresh, embaralha os resultados e pega um diferente.
+ */
+function getDestaqueEmpreendimento(array $localidades) {
     global $conn;
-    $premiacoes = [];
+    if (empty($localidades)) return null;
+
     try {
-        $sql = "SELECT E.Empreend_ID, E.NomeEmpreendimento, P.PremiacaoID, P.Titulo, P.Descricao, 
-                       P.InicioDia, P.InicioMes, P.InicioAno, P.TerminoDia, P.TerminoMes, P.TerminoAno 
-                FROM empreendimento AS E 
-                INNER JOIN premiacao AS P ON E.Empreend_ID = P.Empreend_ID 
-                WHERE P.Ativa = -1 AND 
-                ((P.TerminoAno > YEAR(NOW())) 
-                OR (P.TerminoAno = YEAR(NOW()) AND P.TerminoMes > MONTH(NOW())) 
-                OR (P.TerminoAno = YEAR(NOW()) AND P.TerminoMes = MONTH(NOW()) AND P.TerminoDia >= DAY(NOW()))) 
-                ORDER BY E.NomeEmpreendimento, P.PremiacaoID DESC";
+        $placeholders = implode(',', array_fill(0, count($localidades), '?'));
+        
+        // Busca TODOS os empreendimentos da região (sem LIMIT)
+        $sql = "SELECT * FROM empreendimento 
+                WHERE UPPER(TRIM(Localidade)) IN ($placeholders)";
         $stmt = $conn->prepare($sql);
-        $stmt->execute();
-        $premiacoes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $stmt->execute(array_map('strtoupper', $localidades));
+        $resultados = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Embaralha os resultados para que a cada refresh seja um imóvel diferente
+        shuffle($resultados);
+
+        foreach ($resultados as $row) {
+            // REGRA DE OURO: A imagem é card/ID.jpg
+            $nomeArquivo = $row['Empreend_ID'] . '.jpg';
+            $caminhoFisico = __DIR__ . '/card/' . $nomeArquivo;
+            $caminhoUrl = 'card/' . $nomeArquivo;
+
+            // Se o arquivo existir no servidor, esse é o nosso destaque!
+            if (file_exists($caminhoFisico)) {
+                $row['_img_resolvida'] = $caminhoUrl;
+                return $row;
+            }
+        }
     } catch (PDOException $e) {
-        error_log("Erro ao buscar premiações: " . $e->getMessage());
+        error_log("Erro ao buscar destaque: " . $e->getMessage());
     }
-    return $premiacoes;
+    return null; 
+}
+
+function formataMoeda($valor) {
+    if (is_numeric($valor)) return 'R$ ' . number_format($valor, 2, ',', '.');
+    return $valor ?: 'Consulte';
+}
+
+function formataArea($valor) {
+    if (is_numeric($valor)) return number_format($valor, 2, '.', '') . 'm²';
+    return $valor ?: 'Consulte';
 }
 
 // =======================================================
@@ -127,7 +158,10 @@ function getPremiacoesAtivas() {
 $localidades  = getLocalidades();
 $anosEntrega  = getAnosEntrega();
 $empresas     = getEmpresas();
-$premiacoes   = getPremiacoesAtivas();
+
+// Buscando 1 destaque aleatório para cada região
+$destaquePorto = getDestaqueEmpreendimento(['PORTO DE GALINHAS', 'CUPE', 'MURO ALTO']);
+$destaqueCarneiros = getDestaqueEmpreendimento(['CARNEIROS', 'MARAGOGI']);
 ?>
 
 <!DOCTYPE html>
@@ -627,87 +661,155 @@ body {
 }
 
 /* ============================================================ */
-/* CARDS DE PREMIAÇÃO                                           */
+/* CARDS DE IMÓVEIS EM DESTAQUE (Layout da Imagem)              */
 /* ============================================================ */
-.empreendimento-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 22px;
-}
-.empreendimento-card {
-    background: var(--card-bg);
+.property-card {
+    background: #fff;
     border: 3px solid var(--shadow-color);
-    border-radius: 16px;
-    box-shadow: 5px 5px 0 0 var(--shadow-color);
-    padding: 20px;
-    transition: all 0.2s;
+    border-radius: 12px;
+    box-shadow: 6px 6px 0 0 var(--shadow-color);
+    overflow: hidden;
     display: flex;
     flex-direction: column;
+    height: 100%;
+    transition: all 0.2s;
 }
-.empreendimento-card:hover {
+.property-card:hover {
     transform: translateY(-4px);
     box-shadow: 8px 8px 0 0 var(--shadow-color);
 }
-.empreendimento-card-header {
-    font-weight: 900;
-    font-size: 1.05rem;
-    color: var(--primary);
+
+/* Header do Card */
+.property-card-header {
+    background: #8b7355; /* Cor marrom da imagem */
+    color: #fff;
+    padding: 12px 16px;
     border-bottom: 3px solid var(--shadow-color);
-    padding-bottom: 12px;
-    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.property-loc {
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.9;
+}
+.property-title {
+    font-size: 1.15rem;
+    font-weight: 900;
+    margin: 0;
+    line-height: 1.2;
     display: flex;
     align-items: center;
     gap: 8px;
-    letter-spacing: -0.2px;
+    flex-wrap: wrap;
 }
-.empreendimento-card-header i {
-    background: var(--primary);
-    color: #fff;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.85rem;
-    flex-shrink: 0;
+.property-title small {
+    font-size: 0.75rem;
+    font-weight: 600;
+    opacity: 0.8;
+    text-transform: uppercase;
 }
 
-.premiacao-list { list-style: none; padding: 0; margin: 0; }
-.premiacao-item {
-    padding: 12px 0;
-    border-bottom: 2px dashed rgba(0,0,0,0.12);
+/* Corpo do Card (Imagem + Info) */
+.property-card-body {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    background: #fff;
 }
-.premiacao-item:last-child { border-bottom: none; padding-bottom: 0; }
-.premiacao-titulo {
-    font-weight: 800;
-    color: var(--primary);
-    font-size: 0.95rem;
-    margin-bottom: 4px;
+.property-image {
+    width: 60%;
+    position: relative;
+    background: #e9ecef;
+    border-right: 3px solid var(--shadow-color);
+    min-height: 280px;
 }
-.premiacao-descricao {
-    font-size: 0.85rem;
-    color: var(--text-color);
-    opacity: 0.8;
-    margin: 4px 0 8px;
-    line-height: 1.45;
-}
-.premiacao-periodo {
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: var(--text-color);
-    background: rgba(0,0,0,0.06);
-    padding: 4px 10px;
-    border-radius: 6px;
-    display: inline-block;
-}
-.no-premiacoes {
-    color: var(--text-color);
-    opacity: 0.7;
-    font-style: italic;
-    padding: 14px 0;
-    text-align: center;
+.property-image img {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Lista de Informações */
+.property-info {
+    width: 40%;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 10px;
+}
+.info-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+}
+.info-row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+.info-row i {
+    color: #7a6550; /* Ícones marrons */
+    font-size: 1rem;
+    margin-top: 2px;
+    width: 16px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.info-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.info-label {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.info-value {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #333;
+    line-height: 1.3;
+}
+.info-value.price {
+    color: #a83232; /* Vermelho escuro */
+    font-weight: 800;
+    font-size: 0.9rem;
+}
+.info-value a {
+    color: #8b7355;
+    text-decoration: underline;
+    font-weight: 800;
+}
+.info-value a:hover {
+    color: #5c4431;
+}
+
+/* Responsividade dos Cards */
+@media (max-width: 768px) {
+    .property-card-body {
+        flex-direction: column;
+    }
+    .property-image {
+        width: 100%;
+        height: 220px;
+        border-right: none;
+        border-bottom: 3px solid var(--shadow-color);
+    }
+    .property-info {
+        width: 100%;
+    }
 }
 
 /* ============================================================ */
@@ -856,9 +958,7 @@ body {
 
 <div class="main-container">
 
-    <!-- ================================================== -->
-    <!-- HEADER (logo + info + usuário)                     -->
-    <!-- ================================================== -->
+    <!-- HEADER -->
     <header class="app-header">
         <div class="header-inner">
             <div class="header-brand">
@@ -884,9 +984,7 @@ body {
         </div>
     </header>
 
-    <!-- ================================================== -->
-    <!-- MENUS                                              -->
-    <!-- ================================================== -->
+    <!-- MENUS -->
     <nav class="menus-bar">
         <div class="dropdown">
             <button class="btn btn-menu" type="button" onclick="window.open('empreend_mapa_v5vbr.php', '_blank')">
@@ -895,9 +993,6 @@ body {
         </div>
 
         <?php if (UsuarioPodeEditar()): ?>
-
-
-
         <?php endif; ?>
 
         <div class="dropdown">
@@ -907,7 +1002,6 @@ body {
             <ul class="dropdown-menu">
                 <li><a class="dropdown-item" href="empresa_list_v3b.php" target="_blank"><i class="fas fa-building"></i> Imóveis</a></li>
                 <li><a class="dropdown-item" href="gestao_empreend_filtro_local2.php" target="_blank"><i class="fas fa-images"></i> Cards</a></li>
-                
             </ul>
         </div>
 
@@ -919,9 +1013,8 @@ body {
                 <li><a class="dropdown-item" href="calcInterativaX7d.php" target="_blank"><i class="fas fa-calculator"></i> Calculadora %/R$</a></li>
                 <li><a class="dropdown-item" href="calcInterativaX6a-pre-pos.php" target="_blank"><i class="fas fa-calculator"></i> Calculadora Pré/Pós</a></li>
                 <li><a class="dropdown-item" href="calcRandon3.php" target="_blank"><i class="fas fa-calculator"></i> Calc. Inteligente</a></li>
-                
+
                 <?php if (UsuarioPodeEditar()): ?>
-                    
                     <li><a class="dropdown-item" href="menu4b.php" target="_blank"><i class="fas fa-pencil-alt"></i> Menu Atualizador</a></li>
                 <?php endif; ?>
             </ul>
@@ -936,34 +1029,25 @@ body {
                 <li><a class="dropdown-item" href="usr_painel26_2.php" target="_blank"><i class="fas fa-file-alt"></i> Painel RH 2026 Novo</a></li>
                 <li><a class="dropdown-item" href="usr_listar.php" target="_blank"><i class="fas fa-file-alt"></i> RH Cad. USR</a></li>
                 <li><a class="dropdown-item" href="usr_dupe1.php" target="_blank"><i class="fas fa-file-alt"></i> RH DUPE. USR</a></li>
-                
                 <li><a class="dropdown-item" href="rh_status_list.php" target="_blank"><i class="fas fa-file-alt"></i> RH Licença</a></li>
                 <li><a class="dropdown-item" href="mapaip3.php" target="_blank"><i class="fas fa-file-alt"></i> RH Map</a></li>
                 <li><a class="dropdown-item" href="diretoria_list.php" target="_blank"><i class="fas fa-file-alt"></i> RH Diretorias</a></li>
-                <li><a class="dropdown-item" href="gerencia_list.php" target="_blank"><i class="fas fa-file-alt"></i> RH Gerências</a></li>
+                <li><a class="dropdown-item" href="gerencia_list.php" target="_blank"><i class="fas fa-file-alt"></i> RH Gerencias</a></li>
                 <li><a class="dropdown-item" href="historico_list.php" target="_blank"><i class="fas fa-cogs"></i> Log Acessos</a></li>
                 <li><a class="dropdown-item" href="log_list.php" target="_blank"><i class="fas fa-cogs"></i> Log Páginas</a></li>
                 <li><a class="dropdown-item" href="log_conta_paginas.php" target="_blank"><i class="fas fa-cogs"></i> Log Páginas 2</a></li>
                 <li><a class="dropdown-item" href="manut_vendas_diretorias.php" target="_blank"><i class="fas fa-cogs"></i> Vendas Diretorias</a></li>
                 <li><a class="dropdown-item" href="manutmenu.php" target="_blank"><i class="fas fa-cogs"></i> Manutenção do Sistema</a></li>
-                
                 <li><a class="dropdown-item" href="listar_simulacao.php" target="_blank"><i class="fas fa-cogs"></i> M2 Completa</a></li>
                 <li><a class="dropdown-item" href="listar_simulacao_simples.php" target="_blank"><i class="fas fa-cogs"></i> M2 Simples</a></li>
-                
-                
                 <li><a class="dropdown-item" href="log_atualizar_nome_arquivo.php" target="_blank"><i class="fas fa-cogs"></i> Atualiza Log</a></li>
-                
                 <li><a class="dropdown-item" href="empreend_update_pavimentos.php" target="_blank"><i class="fas fa-cogs"></i> Pavimentos</a></li>
             </ul>
         </div>
-
-
         <?php endif; ?>
     </nav>
 
-    <!-- ================================================== -->
-    <!-- CARROSSEL                                          -->
-    <!-- ================================================== -->
+    <!-- CARROSSEL -->
     <div class="carousel-container">
         <div id="carouselExampleAutoplaying" class="carousel slide" data-bs-ride="carousel" data-bs-interval="7000">
             <div class="carousel-inner">
@@ -993,9 +1077,7 @@ body {
         </div>
     </div>
 
-    <!-- ================================================== -->
-    <!-- FILTROS                                            -->
-    <!-- ================================================== -->
+    <!-- FILTROS -->
     <div class="section-card card-filters">
         <div class="section-card-header">
             <i class="fas fa-filter"></i> Filtros de Empreendimentos
@@ -1087,73 +1169,208 @@ body {
         </div>
     </div>
 
-    <!-- ================================================== -->
-    <!-- PREMIAÇÕES                                         -->
-    <!-- ================================================== -->
-    <div class="section-card">
-        <div class="section-card-header">
-            <i class="fas fa-award"></i> Premiações Ativas
-        </div>
-        <div class="section-card-body">
-            <div class="empreendimento-container">
-                <?php
-                $currentEmpreendID = "";
-                $hasPremiacoesForCurrentEmpreend = false;
+    <!-- DOIS CARDS DE IMÓVEIS (DESTAQUES) -->
+    <div class="row g-4 mb-4">
 
-                if (!empty($premiacoes)) {
-                    foreach ($premiacoes as $row) {
-                        if ($row['Empreend_ID'] != $currentEmpreendID) {
-                            if ($currentEmpreendID != "") {
-                                if (!$hasPremiacoesForCurrentEmpreend) {
-                                    echo "<li class=\"no-premiacoes\">Nenhuma premiação ativa no momento para este empreendimento.</li>";
-                                }
-                                echo "</ul></div>";
-                            }
-
-                            $currentEmpreendID = $row['Empreend_ID'];
-                            echo "<div class=\"empreendimento-card\">";
-                            echo "<div class=\"empreendimento-card-header\">";
-                            echo "<i class=\"fas fa-building\"></i> " . htmlspecialchars($row['NomeEmpreendimento']);
-                            echo "</div>";
-                            echo "<ul class=\"premiacao-list\">";
-                            $hasPremiacoesForCurrentEmpreend = false;
-                        }
-
-                        $periodo = str_pad($row['InicioDia'], 2, '0', STR_PAD_LEFT) . "/" .
-                                   str_pad($row['InicioMes'], 2, '0', STR_PAD_LEFT) . "/" .
-                                   $row['InicioAno'] . " a " .
-                                   str_pad($row['TerminoDia'], 2, '0', STR_PAD_LEFT) . "/" .
-                                   str_pad($row['TerminoMes'], 2, '0', STR_PAD_LEFT) . "/" .
-                                   $row['TerminoAno'];
-
-                        echo "<li class=\"premiacao-item\">";
-                        echo "<div class=\"premiacao-titulo\">" . htmlspecialchars($row['Titulo']) . "</div>";
-                        echo "<div class=\"premiacao-descricao\">";
-                        echo substr(htmlspecialchars($row['Descricao']), 0, 150);
-                        if (strlen($row['Descricao']) > 150) echo "...";
-                        echo "</div>";
-                        echo "<div class=\"premiacao-periodo\"><strong>Período:</strong> " . $periodo . "</div>";
-                        echo "</li>";
-                        $hasPremiacoesForCurrentEmpreend = true;
-                    }
-
-                    if ($currentEmpreendID != "") {
-                        if (!$hasPremiacoesForCurrentEmpreend) {
-                            echo "<li class=\"no-premiacoes\">Nenhuma premiação ativa no momento para este empreendimento.</li>";
-                        }
-                        echo "</ul></div>";
-                    }
-                } else {
-                    echo "<div class=\"no-premiacoes\">Nenhum empreendimento com premiações ativas encontrado.</div>";
-                }
-                ?>
+        <!-- ========== CARD 1: PORTO DE GALINHAS / CUPE / MURO ALTO ========== -->
+        <div class="col-lg-6">
+            <?php if ($destaquePorto): 
+                $img = $destaquePorto['_img_resolvida']; // Caminho card/ID.jpg validado pela função
+                
+                $precoMin = $destaquePorto['PrecoMinimo'] ?? $destaquePorto['Preco'] ?? null;
+                $precoMax = $destaquePorto['PrecoMaximo'] ?? $destaquePorto['Preco'] ?? null;
+                $metMin = $destaquePorto['MetragemMinima'] ?? $destaquePorto['Metragem'] ?? null;
+                $metMax = $destaquePorto['MetragemMaxima'] ?? $destaquePorto['Metragem'] ?? null;
+                $tipo = $destaquePorto['Tipologia'] ?? 'Não informada';
+                $pav = $destaquePorto['Pavimentos'] ?? 'Não informado';
+                $mes = $destaquePorto['MesEntrega'] ?? $destaquePorto['MesPrevisto'] ?? '';
+                $ano = $destaquePorto['AnoEntrega'] ?? $destaquePorto['AnoPrevisto'] ?? '';
+                $construtora = $destaquePorto['NomeConstrutora'] ?? $destaquePorto['Construtora'] ?? '';
+            ?>
+            <div class="property-card">
+                <div class="property-card-header">
+                    <span class="property-loc"><?= htmlspecialchars($destaquePorto['Localidade']) ?></span>
+                    <h3 class="property-title">
+                        <?= htmlspecialchars($destaquePorto['NomeEmpreendimento']) ?>
+                        <?php if($construtora): ?><small><?= htmlspecialchars($construtora) ?></small><?php endif; ?>
+                    </h3>
+                </div>
+                <div class="property-card-body">
+                    <div class="property-image">
+                        <img src="<?= htmlspecialchars($img) ?>" alt="<?= htmlspecialchars($destaquePorto['NomeEmpreendimento']) ?>">
+                    </div>
+                    <div class="property-info">
+                        <div class="info-row">
+                            <i class="far fa-calendar-check"></i>
+                            <div class="info-content">
+                                <span class="info-label">Status de Entrega</span>
+                                <span class="info-value"><?= ($mes && $ano) ? "PREVISÃO: " . str_pad($mes, 2, '0', STR_PAD_LEFT) . "/" . $ano : "Consulte" ?></span>
+                            </div>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-tag"></i>
+                            <div class="info-content">
+                                <span class="info-label">Faixa de Preço</span>
+                                <span class="info-value price">
+                                    <?php if ($precoMin && $precoMax): ?>
+                                        <?= formataMoeda($precoMin) ?> a <?= formataMoeda($precoMax) ?>
+                                    <?php elseif ($precoMin): ?>
+                                        A partir de <?= formataMoeda($precoMin) ?>
+                                    <?php else: ?>
+                                        Consulte
+                                    <?php endif; ?>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-ruler-combined"></i>
+                            <div class="info-content">
+                                <span class="info-label">Faixa de Metragem</span>
+                                <span class="info-value">
+                                    <?php if ($metMin && $metMax): ?>
+                                        <?= formataArea($metMin) ?> a <?= formataArea($metMax) ?>
+                                    <?php elseif ($metMin): ?>
+                                        <?= formataArea($metMin) ?>
+                                    <?php else: ?>
+                                        Consulte
+                                    <?php endif; ?>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-bed"></i>
+                            <div class="info-content">
+                                <span class="info-label">Tipologia</span>
+                                <span class="info-value"><?= htmlspecialchars($tipo) ?></span>
+                            </div>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-layer-group"></i>
+                            <div class="info-content">
+                                <span class="info-label">Pavimentos</span>
+                                <span class="info-value"><?= htmlspecialchars($pav) ?></span>
+                            </div>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-map-marker-alt"></i>
+                            <div class="info-content">
+                                <span class="info-label">Localização</span>
+                                <span class="info-value">
+                                    <a href="empreend_mapa_v5vbr.php?id=<?= urlencode($destaquePorto['Empreend_ID']) ?>" target="_blank">Ver no Mapa</a>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
+            <?php else: ?>
+                <div class="alert alert-warning text-center h-100 d-flex align-items-center justify-content-center">
+                    Nenhum imóvel com imagem (card/ID.jpg) encontrado em Porto de Galinhas, Cupe ou Muro Alto.
+                </div>
+            <?php endif; ?>
         </div>
+
+        <!-- ========== CARD 2: CARNEIROS / MARAGOGI ========== -->
+        <div class="col-lg-6">
+            <?php if ($destaqueCarneiros): 
+                $img = $destaqueCarneiros['_img_resolvida']; // Caminho card/ID.jpg validado pela função
+                
+                $precoMin = $destaqueCarneiros['PrecoMinimo'] ?? $destaqueCarneiros['Preco'] ?? null;
+                $precoMax = $destaqueCarneiros['PrecoMaximo'] ?? $destaqueCarneiros['Preco'] ?? null;
+                $metMin = $destaqueCarneiros['MetragemMinima'] ?? $destaqueCarneiros['Metragem'] ?? null;
+                $metMax = $destaqueCarneiros['MetragemMaxima'] ?? $destaqueCarneiros['Metragem'] ?? null;
+                $tipo = $destaqueCarneiros['Tipologia'] ?? 'Não informada';
+                $pav = $destaqueCarneiros['Pavimentos'] ?? 'Não informado';
+                $mes = $destaqueCarneiros['MesEntrega'] ?? $destaqueCarneiros['MesPrevisto'] ?? '';
+                $ano = $destaqueCarneiros['AnoEntrega'] ?? $destaqueCarneiros['AnoPrevisto'] ?? '';
+                $construtora = $destaqueCarneiros['NomeConstrutora'] ?? $destaqueCarneiros['Construtora'] ?? '';
+            ?>
+            <div class="property-card">
+                <div class="property-card-header">
+                    <span class="property-loc"><?= htmlspecialchars($destaqueCarneiros['Localidade']) ?></span>
+                    <h3 class="property-title">
+                        <?= htmlspecialchars($destaqueCarneiros['NomeEmpreendimento']) ?>
+                        <?php if($construtora): ?><small><?= htmlspecialchars($construtora) ?></small><?php endif; ?>
+                    </h3>
+                </div>
+                <div class="property-card-body">
+                    <div class="property-image">
+                        <img src="<?= htmlspecialchars($img) ?>" alt="<?= htmlspecialchars($destaqueCarneiros['NomeEmpreendimento']) ?>">
+                    </div>
+                    <div class="property-info">
+                        <div class="info-row">
+                            <i class="far fa-calendar-check"></i>
+                            <div class="info-content">
+                                <span class="info-label">Status de Entrega</span>
+                                <span class="info-value"><?= ($mes && $ano) ? "PREVISÃO: " . str_pad($mes, 2, '0', STR_PAD_LEFT) . "/" . $ano : "Consulte" ?></span>
+                            </div>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-tag"></i>
+                            <div class="info-content">
+                                <span class="info-label">Faixa de Preço</span>
+                                <span class="info-value price">
+                                    <?php if ($precoMin && $precoMax): ?>
+                                        <?= formataMoeda($precoMin) ?> a <?= formataMoeda($precoMax) ?>
+                                    <?php elseif ($precoMin): ?>
+                                        A partir de <?= formataMoeda($precoMin) ?>
+                                    <?php else: ?>
+                                        Consulte
+                                    <?php endif; ?>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-ruler-combined"></i>
+                            <div class="info-content">
+                                <span class="info-label">Faixa de Metragem</span>
+                                <span class="info-value">
+                                    <?php if ($metMin && $metMax): ?>
+                                        <?= formataArea($metMin) ?> a <?= formataArea($metMax) ?>
+                                    <?php elseif ($metMin): ?>
+                                        <?= formataArea($metMin) ?>
+                                    <?php else: ?>
+                                        Consulte
+                                    <?php endif; ?>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-bed"></i>
+                            <div class="info-content">
+                                <span class="info-label">Tipologia</span>
+                                <span class="info-value"><?= htmlspecialchars($tipo) ?></span>
+                            </div>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-layer-group"></i>
+                            <div class="info-content">
+                                <span class="info-label">Pavimentos</span>
+                                <span class="info-value"><?= htmlspecialchars($pav) ?></span>
+                            </div>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-map-marker-alt"></i>
+                            <div class="info-content">
+                                <span class="info-label">Localização</span>
+                                <span class="info-value">
+                                    <a href="empreend_mapa_v5vbr.php?id=<?= urlencode($destaqueCarneiros['Empreend_ID']) ?>" target="_blank">Ver no Mapa</a>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php else: ?>
+                <div class="alert alert-warning text-center h-100 d-flex align-items-center justify-content-center">
+                    Nenhum imóvel com imagem (card/ID.jpg) encontrado em Carneiros ou Maragogi.
+                </div>
+            <?php endif; ?>
+        </div>
+
     </div>
 
-    <!-- ================================================== -->
-    <!-- SEÇÃO DIRETOR                                      -->
-    <!-- ================================================== -->
+    <!-- SEÇÃO DIRETOR -->
     <?php
     $sessaoUserId  = $_SESSION['UserId']  ?? 0;
     $usuarioAtual  = $_SESSION['Usuario'] ?? 'Desconhecido';
@@ -1171,9 +1388,9 @@ body {
         $_SESSION['NOME_DIRETORIA']  = 'Gestão Geral';
     } else {
         $stmt = $conn->prepare("
-            SELECT DiretoriaId, NomeDiretoria, Nome, Usuario, NomeDiretor 
-            FROM diretorias 
-            WHERE UserId = :userid 
+            SELECT DiretoriaId, NomeDiretoria, Nome, Usuario, NomeDiretor
+            FROM diretorias
+            WHERE UserId = :userid
             LIMIT 1
         ");
         $stmt->execute([':userid' => $sessaoUserId]);
@@ -1237,9 +1454,7 @@ body {
     </div>
     <?php endif; ?>
 
-    <!-- ================================================== -->
-    <!-- LOGOUT                                             -->
-    <!-- ================================================== -->
+    <!-- LOGOUT -->
     <div class="d-flex justify-content-center my-4">
         <a href="#" onclick="logout(); return false;" class="btn btn-danger">
             <i class="fas fa-sign-out-alt"></i> Sair do Sistema
