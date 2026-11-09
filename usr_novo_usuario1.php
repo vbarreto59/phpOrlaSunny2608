@@ -173,7 +173,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             // ==========================================================
             // EMAIL DE NOTIFICAÇÃO
             // ==========================================================
-            $to      = "sendmail@gabnetweb.com.br, valterpb@hotmail.com";
+            $to      = "sendmail@sunnyimob.com.br, valterpb@hotmail.com";
             $subject = "SI-Novo Usuário-" . strtoupper($usuarioLogado) . " - " . $_SERVER['REMOTE_ADDR'] . " - " . date('Y-m-d H:i:s');
 
             $message  = "NOVO CORRETOR CADASTRADO NO SISTEMA\n";
@@ -197,8 +197,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $message .= "IP Origem:      " . $_SERVER['REMOTE_ADDR'] . "\n";
             $message .= "Navegador:      " . ($_SERVER['HTTP_USER_AGENT'] ?? 'N/A') . "\n";
 
-            $headers  = "From: sendmail@gabnetweb.com.br\r\n";
-            $headers .= "Reply-To: sendmail@gabnetweb.com.br\r\n";
+            $headers  = "From: sendmail@sunnyimob.com.br\r\n";
+            $headers .= "Reply-To: sendmail@sunnyimob.com.br\r\n";
             $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
             $headers .= "X-Mailer: PHP/" . phpversion();
 

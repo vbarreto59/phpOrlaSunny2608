@@ -130,7 +130,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Estrutura de Equipe TOCCA ONZE</title>
+    <title>Estrutura de Equipe ORLA IMOB</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #f8f9fa; font-size: 0.85rem; }
@@ -149,7 +149,7 @@ try {
 </head>
 <body>
 <div class="container-fluid py-4">
-    <h4 class="mb-4 fw-bold text-center">Estrutura de Equipe TOCCA ONZE</h4>
+    <h4 class="mb-4 fw-bold text-center">Estrutura de Equipe ORLA IMOB</h4>
 
     <div class="row g-3 justify-content-center mb-4">
         <?php foreach ($contagemAtivos as $cargo => $qtd): ?>

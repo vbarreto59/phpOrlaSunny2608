@@ -895,25 +895,9 @@ body {
         </div>
 
         <?php if (UsuarioPodeEditar()): ?>
-        <div class="dropdown">
-            <button class="btn btn-menu dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                <i class="fas fa-folder-open"></i> M2
-            </button>
-            <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="listar_M2_m2.php" target="_blank"><i class="fas fa-file-archive"></i> M2 Data</a></li>
-                <li><a class="dropdown-item" href="listar_M2_lastDate.php" target="_blank"><i class="fas fa-file-archive"></i> M2 Beira Mar</a></li>
-            </ul>
-        </div>
 
-        <div class="dropdown">
-            <button class="btn btn-menu dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                <i class="fas fa-users"></i> RH
-            </button>
-            <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="usr_usuarios_ativos_sunny.php" target="_blank"><i class="fas fa-user-check"></i> Usuários / Licenças</a></li>
-                
-            </ul>
-        </div>
+
+
         <?php endif; ?>
 
         <div class="dropdown">

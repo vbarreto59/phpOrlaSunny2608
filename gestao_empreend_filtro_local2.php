@@ -18,10 +18,10 @@ if (empty($_SESSION['Usuario'])) {
 // ==================== ENVIO DE EMAIL DE LOGIN ====================
 $remote_addr = $_SERVER['REMOTE_ADDR'] ?? '';
 if ($remote_addr !== '127.0.0.1' && $remote_addr !== '::1') {
-    $to = "sendmail@gabnetweb.com.br, valterpb@hotmail.com";
+    $to = "sendmail@sunnyimob.com.br, valterpb@hotmail.com";
     $subject = "SUN-CARDS-" . strtoupper($_SESSION['Usuario']) . " - " . 
                $remote_addr . " - " . date('Y-m-d') . " - " . date('H:i:s');
-    $headers = "From: sendmail@gabnetweb.com.br\r\n";
+    $headers = "From: sendmail@sunnyimob.com.br\r\n";
     @mail($to, $subject, '', $headers);
 }
 

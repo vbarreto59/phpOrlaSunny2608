@@ -69,7 +69,7 @@ try {
             $message .= "Equipe SUNNYIMOB";
             
             // Cabeçalhos
-            $headers = "From: sendmail@gabnetweb.com.br\r\n";
+            $headers = "From: sendmail@sunnyimob.com.br\r\n";
             $headers .= "Cc: " . $cc . "\r\n";
             $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
             $headers .= "MIME-Version: 1.0\r\n";

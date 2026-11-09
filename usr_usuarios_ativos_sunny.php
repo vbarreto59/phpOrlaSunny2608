@@ -19,6 +19,122 @@ if (isset($conn) && $conn instanceof PDO)      $db = $conn;
 elseif (isset($pdo) && $pdo instanceof PDO)    $db = $pdo;
 else die("Erro: conexão com o banco não encontrada.");
 
+// --- Detecta o nome real da coluna de ID em `usuarios` ---
+$userCol = 'UserId';
+try {
+    $cols = $db->query("SHOW COLUMNS FROM usuarios")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('UserId', $cols, true) && in_array('UserID', $cols, true)) {
+        $userCol = 'UserID';
+    }
+} catch (Exception $e) { /* mantém default */ }
+
+// --- Usuário "barreto" pode excluir ---
+$isBarreto = (mb_strtolower(trim($loggedUser)) === 'barreto');
+
+// ============================================================
+// ENDPOINT AJAX: exclusão em lote (CORRIGIDO)
+// ============================================================
+if ($isBarreto && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_users') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    // Log de diagnóstico
+    error_log("[DELETE_USERS] iniciado — user={$loggedUser}, method={$_SERVER['REQUEST_METHOD']}, ids=" . json_encode($_POST['ids'] ?? []));
+
+    try {
+        $ids = $_POST['ids'] ?? [];
+        if (!is_array($ids)) $ids = [];
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn($v) => $v > 0)));
+
+        if (empty($ids)) {
+            echo json_encode(['success' => false, 'message' => 'Nenhum usuário selecionado.']);
+            exit;
+        }
+
+        $totalRequested = count($ids);
+
+        // ── Proteção do "barreto" ──
+        $ph0 = implode(',', array_fill(0, count($ids), '?'));
+        $barretoStmt = $db->prepare("SELECT $userCol FROM usuarios WHERE $userCol IN ($ph0) AND LOWER(TRIM(Usuario)) = 'barreto'");
+        $barretoStmt->execute($ids);
+        $barretoIds = $barretoStmt->fetchAll(PDO::FETCH_COLUMN);
+        if (!empty($barretoIds)) {
+            $ids = array_values(array_diff($ids, array_map('intval', $barretoIds)));
+            error_log("[DELETE_USERS] barreto protegido, removidos dos ids: " . json_encode($barretoIds));
+            if (empty($ids)) {
+                echo json_encode(['success' => false, 'message' => 'O usuário "barreto" é protegido e não pode ser excluído.']);
+                exit;
+            }
+        }
+
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+
+        $db->beginTransaction();
+        try {
+            // ── 1) Tabela de relacionamento usuario_grupo (evita FK constraint) ──
+            $ugCleaned = false;
+            foreach (['UserId', 'UserID', 'userid'] as $ugCol) {
+                try {
+                    $db->prepare("DELETE FROM usuario_grupo WHERE `$ugCol` IN ($ph)")->execute($ids);
+                    $ugCleaned = true;
+                    break;
+                } catch (Exception $e) {
+                    // tenta próximo nome de coluna
+                }
+            }
+            if (!$ugCleaned) {
+                error_log("[DELETE_USERS] Aviso: não foi possível limpar usuario_grupo (tabela/coluna pode não existir)");
+            }
+
+            // ── 2) Diretorias onde o usuário é diretor ──
+            try {
+                $db->prepare("DELETE FROM diretorias WHERE UserId IN ($ph)")->execute($ids);
+            } catch (Exception $e) {
+                error_log("[DELETE_USERS] diretorias cleanup: " . $e->getMessage());
+            }
+
+            // ── 3) Gerências onde o usuário é gerente ──
+            try {
+                $db->prepare("DELETE FROM gerencias WHERE UserId IN ($ph)")->execute($ids);
+            } catch (Exception $e) {
+                error_log("[DELETE_USERS] gerencias cleanup: " . $e->getMessage());
+            }
+
+            // ── 4) O usuário em si — SEM restrição de IdEmp (cross-empresa) ──
+            $stmt = $db->prepare("DELETE FROM usuarios WHERE $userCol IN ($ph)");
+            $stmt->execute($ids);
+            $deleted = $stmt->rowCount();
+
+            $db->commit();
+
+            error_log("[DELETE_USERS] OK — requested={$totalRequested}, deleted={$deleted}, ids=" . json_encode($ids));
+
+            // ── Mensagem de retorno ──
+            $success = ($deleted > 0);
+            if ($deleted === $totalRequested) {
+                $message = $deleted . ' usuário(s) excluído(s) com sucesso.';
+            } elseif ($deleted > 0) {
+                $message = $deleted . ' de ' . $totalRequested . ' usuário(s) excluído(s). Os demais não foram encontrados.';
+            } else {
+                $message = 'Nenhum usuário foi excluído (0 linhas afetadas). IDs: ' . implode(', ', $ids);
+            }
+
+            echo json_encode([
+                'success'   => $success,
+                'message'   => $message,
+                'deleted'   => $deleted,
+                'requested' => $totalRequested
+            ]);
+        } catch (Exception $e) {
+            $db->rollBack();
+            throw $e;
+        }
+    } catch (Exception $e) {
+        error_log("[DELETE_USERS] ERRO: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Erro: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
 // --- Tema seguro ---
 $themeDefaults = [
     'primary' => '#800020', 'primary_dark' => '#4B0C1D',
@@ -29,19 +145,28 @@ $themeDefaults = [
 ];
 $themeSafe = array_merge($themeDefaults, isset($theme) && is_array($theme) ? $theme : []);
 
-// --- Helper para avatar ---
 function avatarUser($uid) {
     $path = __DIR__ . "/fotos/" . (int)$uid . ".jpg";
     if (file_exists($path)) {
         return ["url" => "fotos/" . (int)$uid . ".jpg", "initial" => null];
     }
-    return ["url" => null, "initial" => null]; // inicial calculada no template
+    return ["url" => null, "initial" => null];
+}
+
+function isBarretoUser($usuario) {
+    return mb_strtolower(trim((string)$usuario)) === 'barreto';
 }
 
 try {
     $idsDiretores = $db->query("SELECT DISTINCT UserId FROM diretorias WHERE UserId IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
     $idsGerentes  = $db->query("SELECT DISTINCT UserId FROM gerencias  WHERE UserId IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
-    $todosAtivos  = $db->query("SELECT * FROM usuarios WHERE IdEmp = 2 AND Ativo = 1 ORDER BY Usuario ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+    // Lista TODOS os usuários (todas as empresas)
+    $todosUsuarios = $db->query("
+        SELECT * FROM usuarios
+        ORDER BY Ativo DESC, Usuario ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
     $mapaGrupos   = $db->query("SELECT ID_Grupo, Nome_Grupo FROM grupo")->fetchAll(PDO::FETCH_KEY_PAIR);
     $toccaGroupId = array_search('TOCCA_ONZE', $mapaGrupos);
 
@@ -50,46 +175,56 @@ try {
     $ativosTocca = 0;
     $totalLideranca = 0;
     $totalColaboradores = 0;
+    $totalAtivos = 0;
+    $totalInativos = 0;
 
-    foreach ($todosAtivos as $u) {
-        $uid = $u['UserId'] ?? $u['UserID'] ?? 0;
+    foreach ($todosUsuarios as $u) {
+        $uid = $u[$userCol] ?? $u['UserId'] ?? $u['UserID'] ?? 0;
         $isLider = (in_array($uid, $idsDiretores) || in_array($uid, $idsGerentes));
+        $isAtivo = (int)($u['Ativo'] ?? 0) === 1;
 
         if ($isLider) {
             $lideranca[] = $u;
-            $totalLideranca++;
         } else {
             $colaboradores[] = $u;
-            $totalColaboradores++;
         }
 
-        if ($toccaGroupId !== false && ($u['GrupoId'] ?? null) == $toccaGroupId) {
-            $ativosTocca++;
+        if ($isAtivo) {
+            $totalAtivos++;
+            if ($isLider) $totalLideranca++;
+            else          $totalColaboradores++;
+            if ($toccaGroupId !== false && ($u['GrupoId'] ?? null) == $toccaGroupId) {
+                $ativosTocca++;
+            }
+        } else {
+            $totalInativos++;
         }
     }
 
     $usuariosFinal    = array_merge($lideranca, $colaboradores);
-    $totalGeralAtivos = count($usuariosFinal);
+    $totalGeralAtivos = $totalAtivos;
+    $totalGeral       = $totalAtivos + $totalInativos;
 
     // --- Email de notificação ---
     if (($_SERVER['REMOTE_ADDR'] ?? '') !== '127.0.0.1' && ($_SERVER['REMOTE_ADDR'] ?? '') !== '::1') {
-        $assunto  = "Usuarios Ativos Tocca Onze - " . strtoupper($loggedUser) . " - " . date('d/m/Y H:i:s');
-        $mensagem = "Acesso à página de Contagem de Ativos\n\n"
-                  . "Título: Usuarios Ativos Tocca Onze\n"
+        $assunto  = "Usuarios Orlae - " . strtoupper($loggedUser) . " - " . date('d/m/Y H:i:s');
+        $mensagem = "Acesso à página de Gestão de Ativos\n\n"
+                  . "Título: Usuarios Tocca Onze\n"
                   . "Usuário Logado: " . strtoupper($loggedUser) . "\n"
-                  . "Total de Usuários Ativos: " . $totalGeralAtivos . "\n"
-                  . "Liderança: " . $totalLideranca . "\n"
-                  . "Colaboradores: " . $totalColaboradores . "\n"
-                  . "Usuários no Grupo Tocca Onze: " . $ativosTocca . "\n"
+                  . "Total de Usuários Ativos: " . $totalAtivos . "\n"
+                  . "Total de Usuários Inativos: " . $totalInativos . "\n"
+                  . "Total Geral: " . $totalGeral . "\n"
+                  . "Liderança (ativos): " . $totalLideranca . "\n"
+                  . "Colaboradores (ativos): " . $totalColaboradores . "\n"
+                  . "Usuários no Grupo Tocca Onze (ativos): " . $ativosTocca . "\n"
                   . "IP de Acesso: " . $_SERVER['REMOTE_ADDR'];
-        @enviarEmailSGVendas("sendmail@gabnetweb.com.br, valterpb@hotmail.com", $assunto, $mensagem);
+        @enviarEmailSGVendas("sendmail@sunnyimob.com.br, valterpb@hotmail.com", $assunto, $mensagem);
     }
 
 } catch (PDOException $e) {
     die("Erro ao carregar dados: " . $e->getMessage());
 }
 
-// Cálculo licenças protegido contra negativo
 $baseAtivos   = max(0, $ativosTocca - 10);
 $val_licencas = $baseAtivos * 30;
 $val_total    = $val_licencas + 350;
@@ -126,6 +261,7 @@ $data_hora    = date("d/m/Y H:i");
             --danger: #ef4444;
             --info: #3b82f6;
             --warning: #f59e0b;
+            --inativo: #6b7280;
         }
 
         *, *::before, *::after { box-sizing: border-box; }
@@ -142,9 +278,7 @@ $data_hora    = date("d/m/Y H:i");
             -webkit-font-smoothing: antialiased;
         }
 
-        /* ============================================================ */
-        /* HEADER                                                       */
-        /* ============================================================ */
+        /* HEADER */
         .app-header {
             background: var(--primary);
             color: #fff;
@@ -227,9 +361,10 @@ $data_hora    = date("d/m/Y H:i");
             font-weight: 700;
             opacity: 0.9;
         }
-        .stat-badge.is-success { background: var(--success); }
-        .stat-badge.is-info    { background: var(--info);    }
-        .stat-badge.is-warning { background: var(--warning); color: #000; }
+        .stat-badge.is-success  { background: var(--success); }
+        .stat-badge.is-info     { background: var(--info);    }
+        .stat-badge.is-warning  { background: var(--warning); color: #000; }
+        .stat-badge.is-inativo  { background: var(--inativo); }
 
         .btn-close-header {
             background: var(--danger);
@@ -255,14 +390,9 @@ $data_hora    = date("d/m/Y H:i");
             color: #fff;
         }
 
-        /* ============================================================ */
-        /* CONTAINER                                                    */
-        /* ============================================================ */
         .container-neo { max-width: 1400px; margin: 0 auto; padding: 0 20px; }
 
-        /* ============================================================ */
-        /* TOOLBAR                                                      */
-        /* ============================================================ */
+        /* TOOLBAR */
         .toolbar {
             display: flex;
             align-items: center;
@@ -374,10 +504,53 @@ $data_hora    = date("d/m/Y H:i");
         .neo-switch input:checked + .switch-track { background: var(--primary); }
         .neo-switch input:checked + .switch-track::after { transform: translateX(18px); }
         .neo-switch i { color: var(--primary); }
+        .neo-switch.colab i { color: var(--warning); }
+        .neo-switch.inativo i { color: var(--inativo); }
+        .neo-switch.inativo input:checked + .switch-track { background: var(--inativo); }
+        .neo-switch.ativo i { color: var(--success); }
+        .neo-switch.ativo input:checked + .switch-track { background: var(--success); }
+        .neo-switch.todos i { color: #8b5cf6; }
+        .neo-switch.todos input:checked + .switch-track { background: #8b5cf6; }
 
-        /* ============================================================ */
-        /* TABLE                                                        */
-        /* ============================================================ */
+        /* DELETE BAR */
+        .selected-info {
+            background: #fff;
+            border: 2px solid var(--shadow-color);
+            border-radius: 10px;
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            padding: 8px 14px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--text-color);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .btn-delete-batch {
+            background: var(--danger);
+            color: #fff;
+            border: 2px solid var(--shadow-color);
+            box-shadow: 4px 4px 0 0 var(--shadow-color);
+            border-radius: 10px;
+            padding: 9px 18px;
+            font-weight: 800;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+        .btn-delete-batch:hover:not(:disabled) {
+            transform: translate(-2px, -2px);
+            box-shadow: 6px 6px 0 0 var(--shadow-color);
+            background: #b02a37;
+        }
+        .btn-delete-batch:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* TABLE */
         .table-card {
             background: var(--card-bg);
             border: 3px solid var(--shadow-color);
@@ -418,7 +591,6 @@ $data_hora    = date("d/m/Y H:i");
         table.dataTable.table-neo tbody tr:last-child td { border-bottom: none !important; }
         table.dataTable.table-neo tbody tr:hover td { background: rgba(0,0,0,0.025); }
 
-        /* Linha de liderança destacada */
         table.dataTable.table-neo tbody tr.row-lideranca td {
             background: rgba(59,130,246,0.06);
         }
@@ -429,12 +601,50 @@ $data_hora    = date("d/m/Y H:i");
             box-shadow: inset 4px 0 0 0 var(--info);
         }
 
-        /* Linha do grupo Tocca */
         table.dataTable.table-neo tbody tr.row-tocca td:first-child {
             box-shadow: inset 4px 0 0 0 var(--warning);
         }
         table.dataTable.table-neo tbody tr.row-lideranca.row-tocca td:first-child {
             box-shadow: inset 4px 0 0 0 var(--info), inset 8px 0 0 0 var(--warning);
+        }
+
+        table.dataTable.table-neo tbody tr.row-inativo td {
+            opacity: 0.68;
+            background: rgba(107,114,128,0.05) !important;
+        }
+        table.dataTable.table-neo tbody tr.row-inativo:hover td {
+            opacity: 0.85;
+            background: rgba(107,114,128,0.11) !important;
+        }
+        table.dataTable.table-neo tbody tr.row-inativo td:first-child {
+            box-shadow: inset 4px 0 0 0 var(--inativo) !important;
+        }
+        table.dataTable.table-neo tbody tr.row-lideranca.row-inativo td:first-child {
+            box-shadow: inset 4px 0 0 0 var(--inativo), inset 8px 0 0 0 var(--info) !important;
+        }
+        table.dataTable.table-neo tbody tr.row-tocca.row-inativo td:first-child {
+            box-shadow: inset 4px 0 0 0 var(--inativo), inset 8px 0 0 0 var(--warning) !important;
+        }
+
+        .user-checkbox, #selectAll {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: var(--primary);
+            vertical-align: middle;
+        }
+        table.dataTable.table-neo thead th.col-select,
+        table.dataTable.table-neo tbody td.col-select {
+            text-align: center;
+            padding-left: 8px !important;
+            padding-right: 8px !important;
+        }
+        .lock-icon {
+            display: inline-block;
+            font-size: 12px;
+            color: var(--text-color);
+            opacity: 0.35;
+            cursor: help;
         }
 
         /* Célula do usuário */
@@ -524,6 +734,28 @@ $data_hora    = date("d/m/Y H:i");
             border-radius: 50%;
             background: #fff;
         }
+        .badge-inativo {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: var(--inativo);
+            color: #fff;
+            font-size: 0.66rem;
+            font-weight: 800;
+            padding: 3px 10px;
+            border-radius: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            border: 2px solid var(--shadow-color);
+            box-shadow: 2px 2px 0 0 var(--shadow-color);
+        }
+        .badge-inativo::before {
+            content: "";
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #fff;
+        }
+
         .badge-hier {
             display: inline-flex;
             align-items: center;
@@ -555,9 +787,7 @@ $data_hora    = date("d/m/Y H:i");
             border: 1.5px solid rgba(245,158,11,0.35);
         }
 
-        /* ============================================================ */
-        /* DATATABLES                                                   */
-        /* ============================================================ */
+        /* DATATABLES */
         .dataTables_wrapper .dataTables_filter { display: none; }
         .dataTables_wrapper .dataTables_length,
         .dataTables_wrapper .dataTables_info {
@@ -606,9 +836,7 @@ $data_hora    = date("d/m/Y H:i");
             box-shadow: none;
         }
 
-        /* ============================================================ */
-        /* MOBILE CARDS                                                 */
-        /* ============================================================ */
+        /* MOBILE CARDS */
         .mobile-container { display: none; }
         .user-card {
             background: var(--card-bg);
@@ -626,6 +854,14 @@ $data_hora    = date("d/m/Y H:i");
         }
         .user-card.lider { border-left: 8px solid var(--info); }
         .user-card.tocca { background: linear-gradient(to right, rgba(245,158,11,0.04) 0%, var(--card-bg) 40%); }
+
+        .user-card.inativo {
+            opacity: 0.78;
+            background: linear-gradient(to right, rgba(107,114,128,0.09) 0%, var(--card-bg) 40%);
+            border-left: 8px solid var(--inativo);
+        }
+        .user-card.inativo:hover { opacity: 0.95; }
+        .user-card.lider.inativo { border-left-color: var(--inativo); }
 
         .user-card .card-top {
             display: flex;
@@ -662,9 +898,7 @@ $data_hora    = date("d/m/Y H:i");
             border-radius: 20px;
         }
 
-        /* ============================================================ */
-        /* EMPTY STATE                                                  */
-        /* ============================================================ */
+        /* EMPTY STATE */
         .empty-state {
             display: none;
             text-align: center;
@@ -679,9 +913,7 @@ $data_hora    = date("d/m/Y H:i");
         .empty-state h3 { font-weight: 900; margin: 0 0 6px; }
         .empty-state p { opacity: 0.65; font-weight: 500; margin: 0; }
 
-        /* ============================================================ */
-        /* FOOTER                                                       */
-        /* ============================================================ */
+        /* FOOTER */
         .custom-footer {
             text-align: center;
             padding: 26px 20px 10px;
@@ -693,9 +925,7 @@ $data_hora    = date("d/m/Y H:i");
         .custom-footer strong { color: var(--primary); }
         .custom-footer small { opacity: 0.7; }
 
-        /* ============================================================ */
-        /* RESPONSIVO                                                   */
-        /* ============================================================ */
+        /* RESPONSIVO */
         @media (max-width: 992px) {
             .header-title h1 { font-size: 1.1rem; }
             .logo-img { height: 52px; max-width: 140px; }
@@ -706,8 +936,8 @@ $data_hora    = date("d/m/Y H:i");
             .logo-img { height: 42px; max-width: 110px; padding: 3px 6px; }
             .header-title h1 { font-size: 0.95rem; }
             .header-title p { font-size: 0.7rem; }
-            .header-stats { width: 100%; }
-            .stat-badge { flex: 1; min-width: 0; padding: 6px 10px; }
+            .header-stats { width: 100%; flex-wrap: wrap; }
+            .stat-badge { flex: 1 1 calc(33.333% - 7px); min-width: 0; padding: 6px 10px; }
             .stat-badge .num { font-size: 1.1rem; }
             .stat-badge .label { font-size: 0.55rem; }
             .btn-close-header { width: 100%; justify-content: center; }
@@ -725,9 +955,7 @@ $data_hora    = date("d/m/Y H:i");
 </head>
 <body>
 
-<!-- ============================================================ -->
-<!-- HEADER                                                       -->
-<!-- ============================================================ -->
+<!-- HEADER -->
 <header class="app-header">
     <div class="header-inner">
         <div class="header-brand">
@@ -741,7 +969,11 @@ $data_hora    = date("d/m/Y H:i");
         <div class="header-stats">
             <div class="stat-badge">
                 <span class="num"><?php echo $totalGeralAtivos; ?></span>
-                <span class="label">Total</span>
+                <span class="label">Ativos</span>
+            </div>
+            <div class="stat-badge is-inativo">
+                <span class="num"><?php echo $totalInativos; ?></span>
+                <span class="label">Inativos</span>
             </div>
             <div class="stat-badge is-info">
                 <span class="num"><?php echo $totalLideranca; ?></span>
@@ -763,9 +995,7 @@ $data_hora    = date("d/m/Y H:i");
     </div>
 </header>
 
-<!-- ============================================================ -->
-<!-- CONTEÚDO                                                     -->
-<!-- ============================================================ -->
+<!-- CONTEÚDO -->
 <div class="container-neo">
 
     <!-- Toolbar -->
@@ -785,15 +1015,51 @@ $data_hora    = date("d/m/Y H:i");
                 <span><i class="fas fa-crown"></i> Só liderança</span>
             </label>
 
+            <label class="neo-switch colab" title="Mostrar apenas usuários que NÃO são diretores nem gerentes">
+                <input type="checkbox" id="filterColab">
+                <span class="switch-track"></span>
+                <span><i class="fas fa-user-friends"></i> Só colaboradores</span>
+            </label>
+
             <label class="neo-switch" title="Mostrar apenas usuários do grupo Tocca Onze">
                 <input type="checkbox" id="filterTocca">
                 <span class="switch-track"></span>
                 <span><i class="fas fa-users-cog"></i> Só grupo Tocca</span>
             </label>
+
+            <label class="neo-switch ativo" title="Mostrar apenas usuários ativos">
+                <input type="checkbox" id="filterAtivo" checked>
+                <span class="switch-track"></span>
+                <span><i class="fas fa-check-circle"></i> Só ativos</span>
+            </label>
+
+            <label class="neo-switch inativo" title="Mostrar apenas usuários inativos">
+                <input type="checkbox" id="filterInativo">
+                <span class="switch-track"></span>
+                <span><i class="fas fa-ban"></i> Só inativos</span>
+            </label>
+
+            <label class="neo-switch todos" title="Mostrar todos os usuários (ativos e inativos)">
+                <input type="checkbox" id="filterTodos">
+                <span class="switch-track"></span>
+                <span><i class="fas fa-list-ul"></i> Listar tudo</span>
+            </label>
         </div>
+
+        <?php if ($isBarreto): ?>
+        <div class="toolbar-right" id="deleteBar" style="display:none;">
+            <span class="selected-info">
+                <i class="fas fa-check-square"></i>
+                <strong id="selectedCount">0</strong>&nbsp;selecionado(s)
+            </span>
+            <button type="button" class="btn-delete-batch" id="btnDelete">
+                <i class="fas fa-trash-alt"></i> Excluir Selecionados
+            </button>
+        </div>
+        <?php endif; ?>
     </div>
 
-    <!-- ========== TABELA (desktop) ========== -->
+    <!-- TABELA (desktop) -->
     <div class="table-card">
         <table id="tabelaAtivos" class="table table-neo w-100">
             <thead>
@@ -804,21 +1070,32 @@ $data_hora    = date("d/m/Y H:i");
                     <th style="width: 180px;">Hierarquia</th>
                     <th style="width: 200px;">Grupo</th>
                     <th style="width: 110px;">Status</th>
+                    <?php if ($isBarreto): ?>
+                    <th class="col-select" style="width: 50px;">
+                        <input type="checkbox" id="selectAll" title="Selecionar todos visíveis">
+                    </th>
+                    <?php endif; ?>
                 </tr>
             </thead>
             <tbody>
             <?php $counter = 1; foreach ($usuariosFinal as $u):
-                $uid     = $u['UserId'] ?? $u['UserID'] ?? 0;
+                $uid     = $u[$userCol] ?? $u['UserId'] ?? $u['UserID'] ?? 0;
                 $eDir    = in_array($uid, $idsDiretores);
                 $eGer    = in_array($uid, $idsGerentes);
                 $isLider = ($eDir || $eGer);
                 $isTocca = ($toccaGroupId !== false && ($u['GrupoId'] ?? null) == $toccaGroupId);
+                $isAtivo = (int)($u['Ativo'] ?? 0) === 1;
+                $protegido = isBarretoUser($u['Usuario'] ?? '');
 
                 $fotoPath = __DIR__ . "/fotos/" . (int)$uid . ".jpg";
                 $hasFoto  = file_exists($fotoPath);
                 $initial  = strtoupper(mb_substr($u['Usuario'] ?? '?', 0, 1));
 
-                $cls = trim(($isLider ? 'row-lideranca ' : '') . ($isTocca ? 'row-tocca' : ''));
+                $cls = trim(
+                    ($isLider ? 'row-lideranca ' : '') .
+                    ($isTocca ? 'row-tocca ' : '') .
+                    ($isAtivo ? '' : 'row-inativo')
+                );
             ?>
                 <tr class="<?php echo $cls; ?>">
                     <td><span class="badge-rank"><?php echo $counter++; ?>º</span></td>
@@ -851,22 +1128,39 @@ $data_hora    = date("d/m/Y H:i");
                             <span style="opacity:0.4;font-weight:600;">—</span>
                         <?php endif; ?>
                     </td>
-                    <td><span class="badge-ativo">Ativo</span></td>
+                    <td>
+                        <?php if ($isAtivo): ?>
+                            <span class="badge-ativo">Ativo</span>
+                        <?php else: ?>
+                            <span class="badge-inativo">Inativo</span>
+                        <?php endif; ?>
+                    </td>
+                    <?php if ($isBarreto): ?>
+                    <td class="col-select">
+                        <?php if ($protegido): ?>
+                            <i class="fas fa-lock lock-icon" title="Usuário protegido — não pode ser excluído"></i>
+                        <?php else: ?>
+                            <input type="checkbox" class="user-checkbox table-checkbox" value="<?php echo (int)$uid; ?>">
+                        <?php endif; ?>
+                    </td>
+                    <?php endif; ?>
                 </tr>
             <?php endforeach; ?>
             </tbody>
         </table>
     </div>
 
-    <!-- ========== CARDS (mobile) ========== -->
+    <!-- CARDS (mobile) -->
     <div class="mobile-container">
         <div id="listaCards">
             <?php $counterM = 1; foreach ($usuariosFinal as $u):
-                $uid     = $u['UserId'] ?? $u['UserID'] ?? 0;
+                $uid     = $u[$userCol] ?? $u['UserId'] ?? $u['UserID'] ?? 0;
                 $eDir    = in_array($uid, $idsDiretores);
                 $eGer    = in_array($uid, $idsGerentes);
                 $isLider = ($eDir || $eGer);
                 $isTocca = ($toccaGroupId !== false && ($u['GrupoId'] ?? null) == $toccaGroupId);
+                $isAtivo = (int)($u['Ativo'] ?? 0) === 1;
+                $protegido = isBarretoUser($u['Usuario'] ?? '');
 
                 $fotoPath = __DIR__ . "/fotos/" . (int)$uid . ".jpg";
                 $hasFoto  = file_exists($fotoPath);
@@ -874,16 +1168,28 @@ $data_hora    = date("d/m/Y H:i");
 
                 $grupoNome = $mapaGrupos[$u['GrupoId'] ?? 0] ?? null;
 
-                $cardCls = trim(($isLider ? 'lider ' : '') . ($isTocca ? 'tocca' : ''));
+                $cardCls = trim(
+                    ($isLider ? 'lider ' : '') .
+                    ($isTocca ? 'tocca ' : '') .
+                    ($isAtivo ? '' : 'inativo')
+                );
             ?>
             <div class="user-card <?php echo $cardCls; ?>"
                  data-search="<?php echo htmlspecialchars(strtolower($u['Usuario'] . ' ' . $u['Nome'])); ?>"
                  data-lider="<?php echo $isLider ? '1' : '0'; ?>"
-                 data-tocca="<?php echo $isTocca ? '1' : '0'; ?>">
+                 data-tocca="<?php echo $isTocca ? '1' : '0'; ?>"
+                 data-ativo="<?php echo $isAtivo ? '1' : '0'; ?>">
 
                 <span class="card-index"><?php echo $counterM++; ?>º</span>
 
                 <div class="card-top">
+                    <?php if ($isBarreto): ?>
+                        <?php if ($protegido): ?>
+                            <i class="fas fa-lock lock-icon" title="Usuário protegido — não pode ser excluído"></i>
+                        <?php else: ?>
+                            <input type="checkbox" class="user-checkbox card-checkbox" value="<?php echo (int)$uid; ?>">
+                        <?php endif; ?>
+                    <?php endif; ?>
                     <div class="user-avatar">
                         <?php if ($hasFoto): ?>
                             <img src="fotos/<?php echo (int)$uid; ?>.jpg" alt="">
@@ -898,7 +1204,11 @@ $data_hora    = date("d/m/Y H:i");
                             <?php if ($eDir): ?><span class="badge-hier dir"><i class="fas fa-crown me-1"></i>Diretoria</span><?php endif; ?>
                             <?php if ($eGer): ?><span class="badge-hier ger"><i class="fas fa-user-tie me-1"></i>Gerência</span><?php endif; ?>
                             <?php if (!$eDir && !$eGer): ?><span class="badge-hier ges">Gestão</span><?php endif; ?>
-                            <span class="badge-ativo" style="font-size:0.6rem;padding:2px 8px;">Ativo</span>
+                            <?php if ($isAtivo): ?>
+                                <span class="badge-ativo" style="font-size:0.6rem;padding:2px 8px;">Ativo</span>
+                            <?php else: ?>
+                                <span class="badge-inativo" style="font-size:0.6rem;padding:2px 8px;">Inativo</span>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -926,9 +1236,7 @@ $data_hora    = date("d/m/Y H:i");
 
 </div>
 
-<!-- ============================================================ -->
-<!-- FOOTER                                                       -->
-<!-- ============================================================ -->
+<!-- FOOTER -->
 <footer class="custom-footer">
     <div style="margin-bottom: 5px;">
         <strong>Sistema SunnyImob</strong> — Valter Barreto
@@ -938,9 +1246,7 @@ $data_hora    = date("d/m/Y H:i");
     </div>
 </footer>
 
-<!-- ============================================================ -->
-<!-- SCRIPTS                                                      -->
-<!-- ============================================================ -->
+<!-- SCRIPTS -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
@@ -949,36 +1255,59 @@ $data_hora    = date("d/m/Y H:i");
 (function () {
     'use strict';
 
+    const IS_BARRETO = <?php echo $isBarreto ? 'true' : 'false'; ?>;
+    // URL robusta: usa o href atual (sem fragmento), garantindo o mesmo endpoint da página
+    const DELETE_URL = window.location.href.split('#')[0];
+
     $(document).ready(function () {
 
         // ============================================================
-        // 1) DataTables — sempre inicializa
+        // 1) DataTables
         // ============================================================
+        const orderableTargets = [0, 1, 3, 4, 5];
+        const searchableTargets = [0, 1, 5];
+        if (IS_BARRETO) {
+            orderableTargets.push(6);
+            searchableTargets.push(6);
+        }
+
         const table = $('#tabelaAtivos').DataTable({
             language: { url: "//cdn.datatables.net/plug-ins/1.13.4/i18n/pt-BR.json" },
             pageLength: 50,
             lengthMenu: [[25, 50, 100, -1], [25, 50, 100, "Todos"]],
             ordering: false,
             columnDefs: [
-                { targets: [0, 1, 3, 4, 5], orderable: false },
-                { targets: [0, 1, 5], searchable: false }
+                { targets: orderableTargets, orderable: false },
+                { targets: searchableTargets, searchable: false }
             ],
             drawCallback: function () {
-                // Reaplica visual (a classe já está no tr)
+                if (IS_BARRETO) {
+                    applySelection();
+                }
             }
         });
 
         // ============================================================
-        // 2) Filtros customizados para DataTables
+        // 2) Filtros customizados (DataTables)
         // ============================================================
         $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
             if (settings.nTable.id !== 'tabelaAtivos') return true;
-            const $lider = $('#filterLider');
-            const $tocca = $('#filterTocca');
+            const $lider   = $('#filterLider');
+            const $colab   = $('#filterColab');
+            const $tocca   = $('#filterTocca');
+            const $ativo   = $('#filterAtivo');
+            const $inativo = $('#filterInativo');
+            const $todos   = $('#filterTodos');
             const tr = settings.aoData[dataIndex].nTr;
 
-            if ($lider.is(':checked') && !$(tr).hasClass('row-lideranca')) return false;
-            if ($tocca.is(':checked') && !$(tr).hasClass('row-tocca')) return false;
+            if ($lider.is(':checked')   && !$(tr).hasClass('row-lideranca')) return false;
+            if ($colab.is(':checked')   &&  $(tr).hasClass('row-lideranca')) return false;
+            if ($tocca.is(':checked')   && !$(tr).hasClass('row-tocca'))     return false;
+
+            if (!$todos.is(':checked')) {
+                if ($ativo.is(':checked')   &&  $(tr).hasClass('row-inativo')) return false;
+                if ($inativo.is(':checked') && !$(tr).hasClass('row-inativo')) return false;
+            }
             return true;
         });
 
@@ -1001,7 +1330,7 @@ $data_hora    = date("d/m/Y H:i");
         });
 
         $search.on('keydown', function (e) {
-            if (e.key === 'Escape') $(this).val('').trigger('input');
+            if (e.key === 'Escape') $(this).val().trigger('input');
         });
 
         $clear.on('click', function () {
@@ -1009,9 +1338,32 @@ $data_hora    = date("d/m/Y H:i");
         });
 
         // ============================================================
-        // 4) Filtros (switches) — afetam tabela e cards
+        // 4) Filtros (switches)
         // ============================================================
-        $('#filterLider, #filterTocca').on('change', function () {
+        $('#filterLider').on('change', function () {
+            if (this.checked) $('#filterColab').prop('checked', false);
+            table.draw();
+            filtrarCards($search.val());
+        });
+        $('#filterColab').on('change', function () {
+            if (this.checked) $('#filterLider').prop('checked', false);
+            table.draw();
+            filtrarCards($search.val());
+        });
+        $('#filterTocca').on('change', function () {
+            table.draw();
+            filtrarCards($search.val());
+        });
+
+        // 3 opções mutuamente exclusivas de status
+        $('#filterAtivo, #filterInativo, #filterTodos').on('change', function () {
+            if (this.checked) {
+                $('#filterAtivo, #filterInativo, #filterTodos').not(this).prop('checked', false);
+            } else {
+                if (!$('#filterAtivo').is(':checked') && !$('#filterInativo').is(':checked')) {
+                    $('#filterTodos').prop('checked', true);
+                }
+            }
             table.draw();
             filtrarCards($search.val());
         });
@@ -1021,17 +1373,29 @@ $data_hora    = date("d/m/Y H:i");
         // ============================================================
         function filtrarCards(termo) {
             termo = (termo || '').toLowerCase().trim();
-            const onlyLider = $('#filterLider').is(':checked');
-            const onlyTocca = $('#filterTocca').is(':checked');
+            const onlyLider   = $('#filterLider').is(':checked');
+            const onlyColab   = $('#filterColab').is(':checked');
+            const onlyTocca   = $('#filterTocca').is(':checked');
+            const onlyAtivo   = $('#filterAtivo').is(':checked');
+            const onlyInativo = $('#filterInativo').is(':checked');
+            const onlyTodos   = $('#filterTodos').is(':checked');
 
             let visiveis = 0;
             $('#listaCards .user-card').each(function () {
                 const $c = $(this);
-                const matchTexto = !termo || ($c.data('search') || '').indexOf(termo) !== -1;
-                const matchLider = !onlyLider || $c.data('lider') === 1;
-                const matchTocca = !onlyTocca || $c.data('tocca') === 1;
+                const isAtivo = Number($c.data('ativo')) === 1;
 
-                const show = matchTexto && matchLider && matchTocca;
+                const matchTexto   = !termo || ($c.data('search') || '').indexOf(termo) !== -1;
+                const matchLider   = !onlyLider   || $c.data('lider') === 1;
+                const matchColab   = !onlyColab   || $c.data('lider') === 0;
+                const matchTocca   = !onlyTocca   || $c.data('tocca') === 1;
+
+                let matchStatus = true;
+                if (!onlyTodos) {
+                    matchStatus = (!onlyAtivo || isAtivo) && (!onlyInativo || !isAtivo);
+                }
+
+                const show = matchTexto && matchLider && matchColab && matchTocca && matchStatus;
                 $c.toggle(show);
                 if (show) visiveis++;
             });
@@ -1039,11 +1403,110 @@ $data_hora    = date("d/m/Y H:i");
             $('#emptyCards').toggleClass('visible', visiveis === 0);
         }
 
-        // Inicializa empty state
         filtrarCards('');
 
         // ============================================================
-        // 6) Ajuste do DataTables ao redimensionar
+        // 6) SELEÇÃO EM LOTE
+        // ============================================================
+        const selectedIds = new Set();
+
+        function updateDeleteBar() {
+            if (!IS_BARRETO) return;
+            const $bar = $('#deleteBar');
+            if (!$bar.length) return;
+            const n = selectedIds.size;
+            $('#selectedCount').text(n);
+            $bar.toggle(n > 0);
+        }
+
+        function syncSelectAllState() {
+            if (!IS_BARRETO) return;
+            const $selAll = $('#selectAll');
+            if (!$selAll.length) return;
+            const $visible = $('#tabelaAtivos tbody .table-checkbox:visible');
+            if ($visible.length === 0) {
+                $selAll.prop('checked', false).prop('indeterminate', false);
+                return;
+            }
+            const checked = $visible.filter(':checked').length;
+            $selAll.prop('checked', checked === $visible.length);
+            $selAll.prop('indeterminate', checked > 0 && checked < $visible.length);
+        }
+
+        function applySelection() {
+            if (!IS_BARRETO) return;
+            $('#tabelaAtivos tbody .table-checkbox, #listaCards .card-checkbox').each(function () {
+                this.checked = selectedIds.has(String(this.value));
+            });
+            syncSelectAllState();
+            updateDeleteBar();
+        }
+
+        $(document).on('change', '.user-checkbox', function () {
+            const id = String(this.value);
+            if (this.checked) selectedIds.add(id);
+            else selectedIds.delete(id);
+            applySelection();
+        });
+
+        $(document).on('change', '#selectAll', function () {
+            const isChecked = this.checked;
+            $('#tabelaAtivos tbody .table-checkbox:visible').each(function () {
+                if (isChecked) selectedIds.add(String(this.value));
+                else selectedIds.delete(String(this.value));
+            });
+            applySelection();
+        });
+
+        // ============================================================
+        // 7) EXCLUSÃO EM LOTE (AJAX)
+        // ============================================================
+        $('#btnDelete').on('click', function () {
+            if (!IS_BARRETO) return;
+            const ids = Array.from(selectedIds);
+            if (ids.length === 0) return;
+
+            const msg = 'Tem certeza que deseja EXCLUIR ' + ids.length +
+                        ' usuário(s)?\n\nEsta ação NÃO pode ser desfeita.';
+            if (!confirm(msg)) return;
+
+            const $btn = $(this);
+            const originalHtml = $btn.html();
+            $btn.prop('disabled', true)
+                .html('<i class="fas fa-spinner fa-spin"></i> Excluindo...');
+
+            const formData = new FormData();
+            formData.append('action', 'delete_users');
+            ids.forEach(function (id) { formData.append('ids[]', id); });
+
+            fetch(DELETE_URL, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            })
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function (data) {
+                    console.log('[DELETE_USERS] response:', data);
+                    if (data.success) {
+                        alert(data.message);
+                        window.location.reload();
+                    } else {
+                        alert('Erro: ' + (data.message || 'desconhecido'));
+                        $btn.prop('disabled', false).html(originalHtml);
+                    }
+                })
+                .catch(function (err) {
+                    console.error('[DELETE_USERS] catch:', err);
+                    alert('Erro de comunicação: ' + err.message);
+                    $btn.prop('disabled', false).html(originalHtml);
+                });
+        });
+
+        // ============================================================
+        // 8) Ajuste do DataTables ao redimensionar
         // ============================================================
         let resizeTimer;
         $(window).on('resize', function () {
@@ -1052,6 +1515,7 @@ $data_hora    = date("d/m/Y H:i");
                 table.columns.adjust();
             }, 200);
         });
+
     });
 })();
 </script>

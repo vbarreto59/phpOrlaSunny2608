@@ -77,7 +77,7 @@ try {
             $para = "valterpb@gmail.com, valterpb@hotmail.com";
             
             // Remetente
-            $de = "sendmail@gabnetweb.com.br";
+            $de = "sendmail@sunnyimob.com.br";
             
             // Cabeçalhos do email
             $headers = "From: " . $de . "\r\n" .

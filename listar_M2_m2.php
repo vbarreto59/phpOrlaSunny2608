@@ -16,11 +16,11 @@ if ($_SERVER['REMOTE_ADDR'] !== '127.0.0.1' && $_SERVER['REMOTE_ADDR'] !== '::1'
     $assunto = "SUN-M2-M-" . strtoupper($_SESSION['Usuario']) . " - " . 
                $_SERVER['REMOTE_ADDR'] . " - " . date('Y-m-d') . " - " . date('H:i:s');
     
-    $headers = "From: sendmail@gabnetweb.com.br\r\n";
-    $headers .= "Reply-To: sendmail@gabnetweb.com.br\r\n";
+    $headers = "From: sendmail@sunnyimob.com.br\r\n";
+    $headers .= "Reply-To: sendmail@sunnyimob.com.br\r\n";
     $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
     
-    @mail("sendmail@gabnetweb.com.br, valterpb@hotmail.com", $assunto, "", $headers);
+    @mail("sendmail@sunnyimob.com.br, valterpb@hotmail.com", $assunto, "", $headers);
 }
 
 // Função para executar consultas PDO

@@ -11,9 +11,9 @@ if (!isset($_SESSION["Usuario"]) || $_SESSION["Usuario"] == "") {
 // Envio de e-mail de login (Lógica de segurança)
 $remote_addr = $_SERVER['REMOTE_ADDR'];
 if ($remote_addr !== "127.0.0.1" && $remote_addr !== "::1") {
-    $to = "sendmail@gabnetweb.com.br, valterpb@hotmail.com";
+    $to = "sendmail@sunnyimob.com.br, valterpb@hotmail.com";
     $subject = "SUN-PAGES-P-" . strtoupper($_SESSION["Usuario"]) . " - $remote_addr - " . date("d/m/Y H:i:s");
-    $headers = "From: sendmail@gabnetweb.com.br";
+    $headers = "From: sendmail@sunnyimob.com.br";
     
     @mail($to, $subject, "Acesso registrado em " . date("Y-m-d H:i:s"), $headers);
 }

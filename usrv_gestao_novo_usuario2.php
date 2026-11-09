@@ -19,7 +19,7 @@ $gerencias = $conn->query("SELECT GerenciaID, DiretoriaID, NomeGerencia FROM ger
 
 // Valores fixos da empresa
 $idEmp   = 2;
-$empresa = 'Tocca Onze';
+$empresa = 'ORLA IMOB';
 
 // Processamento do formulário
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

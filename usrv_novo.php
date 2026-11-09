@@ -11,9 +11,9 @@ function sendMail($message) {
         // Aqui você pode implementar o envio de email usando PHPMailer, mail() ou outra biblioteca
         // Exemplo básico com mail() (ajuste conforme sua necessidade):
         /*
-        $to = "sendmail@gabnetweb.com.br, valterpb@hotmail.com";
+        $to = "sendmail@sunnyimob.com.br, valterpb@hotmail.com";
         $subject = "SI-USR.NOVO-" . strtoupper($_SESSION['Usuario']) . " - " . $remote_addr . " - " . date('Y-m-d') . " - " . date('H:i:s');
-        $headers = "From: sendmail@gabnetweb.com.br\r\n";
+        $headers = "From: sendmail@sunnyimob.com.br\r\n";
         mail($to, $subject, $message, $headers);
         */
         

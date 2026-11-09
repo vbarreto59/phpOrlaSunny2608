@@ -6,10 +6,10 @@ require_once 'conn.php';
 // ------------envio de email de login'
 $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 if ($remoteAddr !== "127.0.0.1" && $remoteAddr !== "::1") {
-    $to = "sendmail@gabnetweb.com.br, valterpb@hotmail.com";
+    $to = "sendmail@sunnyimob.com.br, valterpb@hotmail.com";
     $subject = "SI-RH-Acessos-" . strtoupper($_SESSION['Usuario'] ?? '') . " - " . $remoteAddr . " - " . date('Y-m-d') . " - " . date('H:i:s');
     $message = "Verificação de logins";
-    $headers = "From: sendmail@gabnetweb.com.br\r\n";
+    $headers = "From: sendmail@sunnyimob.com.br\r\n";
     // mail($to, $subject, $message, $headers);
 }
 

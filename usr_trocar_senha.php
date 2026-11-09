@@ -88,7 +88,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             // ====================================================================
             if ($_SERVER['REMOTE_ADDR'] !== '127.0.0.1' && $_SERVER['REMOTE_ADDR'] !== '::1') {
                 // Usando função mail() nativa (requer configuração SMTP no php.ini)
-                $to = "sendmail@gabnetweb.com.br, valterpb@hotmail.com";
+                $to = "sendmail@sunnyimob.com.br, valterpb@hotmail.com";
                 $subject = "SUNNY-TROCA-SENHA-" . strtoupper($_SESSION['Usuario']) . 
                           " - " . $_SERVER['REMOTE_ADDR'] . 
                           " - " . date('Y-m-d') . 
@@ -107,7 +107,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $message .= "NAVEGADOR: " . ($_SERVER['HTTP_USER_AGENT'] ?? 'N/A') . "\n\n";
                 $message .= "Este é um email automático do Sistema Sunny.";
                 
-                $headers = "From: sendmail@gabnetweb.com.br\r\n";
+                $headers = "From: sendmail@sunnyimob.com.br\r\n";
                 $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
                 
                 // Tentar enviar o email

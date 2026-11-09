@@ -12,11 +12,18 @@ $banco = "SunnyImob2026";
 */
 
 
-// Configurações de conexão - PRODUÇÃO
+/* Configurações de conexão - PRODUÇÃO
 $host = "189.1.1.185";
 $usuario = "cli213_vbarreto";
 $senha = "P@nk2025";
 $banco = "cli213_gabnet1";
+*/
+
+// ORLA SUNNYIMOB 08 NOV 2026
+$host = "189.1.1.185";
+$usuario = "cli18432_vbarreto";
+$senha = "pgX#2586";
+$banco = "cli18432_sunnyorla";
 
 
 // 1. Conectar ao banco de dados usando PDO

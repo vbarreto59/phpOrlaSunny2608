@@ -191,11 +191,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // ------------envio de email --------------
                 if ($_SERVER['REMOTE_ADDR'] !== '127.0.0.1' && $_SERVER['REMOTE_ADDR'] !== '::1') {
-                    $to = "sendmail@gabnetweb.com.br, valterpb@hotmail.com";
+                    $to = "sendmail@sunnyimob.com.br, valterpb@hotmail.com";
                     $subject = "SUN-IMAGEM-" . strtoupper($_SESSION['Usuario'] ?? 'Sistema') . " - " . 
                                $_SERVER['REMOTE_ADDR'] . " - " . date('Y-m-d') . " - " . date('H:i:s');
                     $message = "Envio de imagem do empreendimento " . $nomeEmpreendimento;
-                    $headers = "From: sendmail@gabnetweb.com.br\r\n";
+                    $headers = "From: sendmail@sunnyimob.com.br\r\n";
                     $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
                     
                     mail($to, $subject, $message, $headers);

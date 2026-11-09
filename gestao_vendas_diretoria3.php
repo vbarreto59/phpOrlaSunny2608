@@ -40,12 +40,12 @@ function converterParaJS($valor) {
 }
 
 try {
-    $to = "sendmail@gabnetweb.com.br, valterpb@hotmail.com";
+    $to = "sendmail@sunnyimob.com.br, valterpb@hotmail.com";
     $subject = "SV-DIR-VENDAS-" . strtoupper($_SESSION['Usuario']) . " - " . $_SERVER['REMOTE_ADDR'] . " - " . date('Y-m-d') . " - " . date('H:i:s');
     $message = "Página Vendas Diretoria: " . strtoupper($_SESSION['Usuario']);
     
     // Adicionando os cabeçalhos para codificação UTF-8 e suporte a acentuação
-    $headers  = "From: sendmail@gabnetweb.com.br\r\n";
+    $headers  = "From: sendmail@sunnyimob.com.br\r\n";
     $headers .= "MIME-Version: 1.0\r\n";
     $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
     

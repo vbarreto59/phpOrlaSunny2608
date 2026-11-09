@@ -175,7 +175,7 @@ try {
 </head>
 <body>
 <div class="container py-5">
-    <h4 class="mb-4 fw-bold text-center">Estrutura de Equipe TOCCA ONZE + Desempenho (VGV e Unidades)</h4>
+    <h4 class="mb-4 fw-bold text-center">Estrutura de Equipe ORLA IMOB + Desempenho (VGV e Unidades)</h4>
 
     <div class="row g-4">
         <?php

@@ -70,7 +70,7 @@ try {
     $ip = $_SERVER['REMOTE_ADDR'] ?? 'desconhecido';
 
     // Título com acentuação correta
-    $assuntoRaw = "[TOCCA ONZE] Alteração de Status: $nomeUsuarioAlterado foi $statusTexto";
+    $assuntoRaw = "[ORLA IMOB] Alteração de Status: $nomeUsuarioAlterado foi $statusTexto";
     $assunto = mb_encode_mimeheader($assuntoRaw, 'UTF-8', 'B');
 
     $mensagemHtml = '
@@ -108,7 +108,7 @@ try {
 
                 <!-- Contagem de ativos com licença -->
                 <div class="contagem">
-                    <strong>Resumo do Grupo TOCCA ONZE:</strong><br>
+                    <strong>Resumo do Grupo ORLA IMOB:</strong><br>
                     Total de usuários ativos com licença válida: <strong>'.$totalAtivosComLicenca.'</strong>
                 </div>
             </div>
@@ -118,7 +118,7 @@ try {
     </html>';
 
     // 7. Envio do e-mail (sempre enviado, sem bloqueio localhost)
-    $headers = "From: sendmail@gabnetweb.com.br\r\n";
+    $headers = "From: sendmail@sunnyimob.com.br\r\n";
     $headers .= "MIME-Version: 1.0\r\n";
     $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
     $destinatarios = "valterpb@gmail.com, valterpb@hotmail.com";

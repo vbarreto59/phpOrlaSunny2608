@@ -104,7 +104,7 @@ try {
     <div class="header-section text-center">
         <div class="container">
             <h1 class="display-6 fw-bold">Nova Gerência</h1>
-            <p class="opacity-75">Cadastre um novo setor administrativo no sistema Tocca Onze</p>
+            <p class="opacity-75">Cadastre um novo setor administrativo no sistema ORLA IMOB</p>
         </div>
     </div>
 

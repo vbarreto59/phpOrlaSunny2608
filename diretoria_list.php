@@ -16,6 +16,10 @@ if (empty($_SESSION['Usuario'])) {
     header("Location: login_p1.php");
     exit();
 }
+$loggedUser = $_SESSION['Usuario'];
+
+// ⬇️ NOVO: detecta "barreto" (case-insensitive)
+$isBarreto = (mb_strtolower(trim((string)$loggedUser)) === 'barreto');
 
 // ============================================================
 // CONEXÃO
@@ -23,6 +27,24 @@ if (empty($_SESSION['Usuario'])) {
 if (isset($conn) && $conn instanceof PDO)      $db = $conn;
 elseif (isset($pdo) && $pdo instanceof PDO)    $db = $pdo;
 else die("Erro: conexão com o banco não encontrada.");
+
+// ============================================================
+// DETECÇÃO DA COLUNA gerencias.DiretoriaID
+// ============================================================
+$gerenciaDirCol = 'DiretoriaID';
+$gerenciaHasDir = false;
+try {
+    $colsG = $db->query("SHOW COLUMNS FROM gerencias")->fetchAll(PDO::FETCH_COLUMN);
+    foreach (['DiretoriaID', 'DiretoriaId', 'Diretoria_Id', 'DirID'] as $candidate) {
+        if (in_array($candidate, $colsG, true)) {
+            $gerenciaDirCol = $candidate;
+            $gerenciaHasDir = true;
+            break;
+        }
+    }
+} catch (Exception $e) {
+    error_log("[DIRETORIA_CRUD] detect gerencia col: " . $e->getMessage());
+}
 
 // ============================================================
 // TEMA SEGURO
@@ -58,12 +80,12 @@ if (empty($_SESSION['csrf_dir'])) {
 $CSRF = $_SESSION['csrf_dir'];
 
 // ============================================================
-// ESTADOS VÁLIDOS (ATIVO / INATIVO)
+// ESTADOS VÁLIDOS
 // ============================================================
 $ESTADOS_VALIDOS = ['ATIVO', 'INATIVO'];
 
 // ============================================================
-// PROCESSAR POST (CREATE / UPDATE / DELETE)
+// PROCESSAR POST
 // ============================================================
 $erros = [];
 
@@ -149,20 +171,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($id > 0) {
             try {
-                $stmt = $db->prepare("SELECT COUNT(*) FROM usuarios WHERE DiretoriaID = ?");
-                $stmt->execute([$id]);
-                $count = (int)$stmt->fetchColumn();
-
-                if ($count > 0) {
-                    $_SESSION['MsgErro'] = "Não é possível excluir: existe(m) <b>$count</b> usuário(s) vinculado(s) a esta diretoria.";
-                } else {
-                    $stmt = $db->prepare("SELECT NomeDiretoria FROM diretorias WHERE DiretoriaID = ?");
+                // ── Contagem de dependentes ──
+                $countUsr = 0;
+                try {
+                    $stmt = $db->prepare("SELECT COUNT(*) FROM usuarios WHERE DiretoriaID = ?");
                     $stmt->execute([$id]);
-                    $nomeExcluido = $stmt->fetchColumn();
-
-                    $db->prepare("DELETE FROM diretorias WHERE DiretoriaID = ?")->execute([$id]);
-                    $_SESSION['MsgSucesso'] = "Diretoria <strong>" . htmlspecialchars($nomeExcluido ?: "#$id") . "</strong> excluída.";
+                    $countUsr = (int)$stmt->fetchColumn();
+                } catch (Exception $e) {
+                    error_log("[DIRETORIA_CRUD] check usuarios: " . $e->getMessage());
                 }
+
+                $countGer = 0;
+                if ($gerenciaHasDir) {
+                    try {
+                        $stmt = $db->prepare("SELECT COUNT(*) FROM gerencias WHERE `$gerenciaDirCol` = ?");
+                        $stmt->execute([$id]);
+                        $countGer = (int)$stmt->fetchColumn();
+                    } catch (Exception $e) {
+                        error_log("[DIRETORIA_CRUD] check gerencias: " . $e->getMessage());
+                    }
+                }
+
+                // ⬇️ NOVO: barreto tem override com cascade
+                if ($isBarreto) {
+                    $db->beginTransaction();
+                    try {
+                        // Nome antes de excluir
+                        $stmt = $db->prepare("SELECT NomeDiretoria FROM diretorias WHERE DiretoriaID = ?");
+                        $stmt->execute([$id]);
+                        $nomeExcluido = $stmt->fetchColumn();
+
+                        // 1) Desvincula usuários (preserva cadastro)
+                        if ($countUsr > 0) {
+                            $db->prepare("UPDATE usuarios SET DiretoriaID = NULL WHERE DiretoriaID = ?")
+                               ->execute([$id]);
+                        }
+
+                        // 2) Exclui gerências em cascata
+                        if ($countGer > 0 && $gerenciaHasDir) {
+                            $db->prepare("DELETE FROM gerencias WHERE `$gerenciaDirCol` = ?")
+                               ->execute([$id]);
+                        }
+
+                        // 3) Exclui a diretoria
+                        $db->prepare("DELETE FROM diretorias WHERE DiretoriaID = ?")
+                           ->execute([$id]);
+
+                        $db->commit();
+
+                        // Mensagem de sucesso com detalhes da cascata
+                        $extras = [];
+                        if ($countGer > 0) $extras[] = "<b>$countGer</b> gerência(s) excluída(s)";
+                        if ($countUsr > 0) $extras[] = "<b>$countUsr</b> usuário(s) desvinculado(s)";
+
+                        $_SESSION['MsgSucesso'] = "Diretoria <strong>" . htmlspecialchars($nomeExcluido ?: "#$id") . "</strong> excluída.";
+                        if (!empty($extras)) {
+                            $_SESSION['MsgSucesso'] .= " <small style='opacity:0.85;'>( " . implode(" · ", $extras) . " )</small>";
+                        }
+
+                        // Log admin
+                        error_log("[DIRETORIA_CRUD] ADMIN 'barreto' excluiu DiretoriaID=$id (gerências=$countGer, usuários desvinculados=$countUsr)");
+
+                    } catch (Exception $e) {
+                        $db->rollBack();
+                        throw $e;
+                    }
+
+                } else {
+                    // ── Fluxo normal (com bloqueios) ──
+                    $bloqueios = [];
+                    if ($countUsr > 0) $bloqueios[] = "<b>$countUsr</b> usuário(s)";
+                    if ($countGer > 0) $bloqueios[] = "<b>$countGer</b> gerência(s)";
+
+                    if (!empty($bloqueios)) {
+                        $_SESSION['MsgErro'] = "Não é possível excluir: existe(m) " . implode(" e ", $bloqueios) . " vinculado(s) a esta diretoria.";
+                    } else {
+                        $stmt = $db->prepare("SELECT NomeDiretoria FROM diretorias WHERE DiretoriaID = ?");
+                        $stmt->execute([$id]);
+                        $nomeExcluido = $stmt->fetchColumn();
+
+                        $db->prepare("DELETE FROM diretorias WHERE DiretoriaID = ?")->execute([$id]);
+                        $_SESSION['MsgSucesso'] = "Diretoria <strong>" . htmlspecialchars($nomeExcluido ?: "#$id") . "</strong> excluída.";
+                    }
+                }
+
                 header("Location: " . $_SERVER['PHP_SELF']);
                 exit;
 
@@ -183,11 +275,20 @@ $diretorias = [];
 $usuarios   = [];
 $erro       = null;
 
+// Subqueries de contagem
+$qtdGerSelect = "0 AS QtdGerencias";
+if ($gerenciaHasDir) {
+    $qtdGerSelect = "(SELECT COUNT(*) FROM gerencias g WHERE g.`$gerenciaDirCol` = d.DiretoriaID) AS QtdGerencias";
+}
+$qtdUsrSelect = "(SELECT COUNT(*) FROM usuarios usr WHERE usr.DiretoriaID = d.DiretoriaID) AS QtdUsuarios";
+
 try {
     $stmt = $db->prepare("
         SELECT d.DiretoriaID, d.NomeDiretoria, d.NomeDiretor, d.TelefoneDiretor,
                d.UserId, d.EstadoDiretoria,
-               u.Nome AS NomeUsuario, u.Usuario
+               u.Nome AS NomeUsuario, u.Usuario,
+               $qtdGerSelect,
+               $qtdUsrSelect
         FROM diretorias d
         LEFT JOIN usuarios u ON d.UserId = u.UserId
         ORDER BY d.NomeDiretoria ASC
@@ -215,6 +316,8 @@ $comUser   = 0;
 $semUser   = 0;
 $ativas    = 0;
 $inativas  = 0;
+$comGer    = 0;
+$totalGer  = 0;
 
 foreach ($diretorias as $d) {
     if (!empty($d['UserId']) && (int)$d['UserId'] > 0) $comUser++;
@@ -223,6 +326,9 @@ foreach ($diretorias as $d) {
     $est = strtoupper(trim((string)($d['EstadoDiretoria'] ?? '')));
     if ($est === 'ATIVO')        $ativas++;
     elseif ($est === 'INATIVO')  $inativas++;
+
+    $qg = (int)($d['QtdGerencias'] ?? 0);
+    if ($qg > 0) { $comGer++; $totalGer += $qg; }
 }
 
 // JSON para o JS
@@ -323,12 +429,34 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
             font-weight: 900;
             letter-spacing: -0.3px;
             line-height: 1.15;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
         }
         .header-title p {
             margin: 4px 0 0;
             font-size: 0.74rem;
             font-weight: 600;
             opacity: 0.9;
+        }
+
+        /* ⬇️ NOVO: badge modo admin */
+        .badge-admin {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: var(--warning);
+            color: #1f2937;
+            border: 2px solid var(--shadow-color);
+            border-radius: 8px;
+            box-shadow: 2px 2px 0 0 var(--shadow-color);
+            padding: 3px 10px;
+            font-size: 0.64rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-left: 4px;
         }
 
         .header-actions { display: flex; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
@@ -395,6 +523,7 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
         .stat-icon.i-success  { background: var(--success); }
         .stat-icon.i-danger   { background: var(--danger); }
         .stat-icon.i-warning  { background: var(--warning); color: #000; }
+        .stat-icon.i-info     { background: var(--info); }
         .stat-info { min-width: 0; }
         .stat-num {
             font-size: 1.5rem;
@@ -505,6 +634,21 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
         .btn-icon:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 0 var(--shadow-color); color: var(--text-color); }
         .btn-icon.edit   { background: var(--warning); color: #000; }
         .btn-icon.delete { background: var(--danger);  color: #fff; }
+        .btn-icon.delete.is-blocked {
+            background: #9ca3af;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        .btn-icon.delete.is-blocked:hover { transform: none; box-shadow: 2px 2px 0 0 var(--shadow-color); }
+        /* ⬇️ NOVO: barreto com cascade pendente */
+        .btn-icon.delete.has-cascade {
+            background: var(--warning);
+            color: #1f2937;
+        }
+        .btn-icon.delete.has-cascade:hover {
+            background: #d97706;
+            color: #fff;
+        }
 
         /* TABELA */
         .table-card {
@@ -562,6 +706,28 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
             border-radius: 6px;
             font-size: 0.76rem;
             font-weight: 700;
+        }
+
+        /* Badge de gerências vinculadas */
+        .badge-gerencias {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            margin-left: 6px;
+            padding: 2px 8px;
+            background: rgba(59,130,246,0.15);
+            color: #1e40af;
+            border-radius: 20px;
+            font-size: 0.65rem;
+            font-weight: 800;
+            border: 1.5px solid rgba(59,130,246,0.4);
+            vertical-align: middle;
+        }
+        /* ⬇️ NOVO: badge cascade (barreto) */
+        .badge-gerencias.cascade {
+            background: rgba(245,158,11,0.18);
+            color: #92400e;
+            border-color: rgba(245,158,11,0.5);
         }
 
         /* Badge ATIVO / INATIVO */
@@ -749,7 +915,14 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
         <div class="header-brand">
             <img src="img/logosunny.jpg" alt="Logo" class="header-logo" onerror="this.style.display='none'">
             <div class="header-title">
-                <h1><i class="fas fa-building me-2"></i> Diretorias</h1>
+                <h1>
+                    <i class="fas fa-building"></i> Diretorias
+                    <?php if ($isBarreto): ?>
+                        <span class="badge-admin" title="Você pode excluir mesmo com dependências (cascade)">
+                            <i class="fas fa-shield-halved"></i> Modo Admin
+                        </span>
+                    <?php endif; ?>
+                </h1>
                 <p>Gestão de estrutura organizacional · <?= $total ?> registros</p>
             </div>
         </div>
@@ -811,6 +984,13 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
             </div>
         </div>
         <div class="stat-card">
+            <div class="stat-icon i-info"><i class="fas fa-sitemap"></i></div>
+            <div class="stat-info">
+                <div class="stat-num"><?= $totalGer ?></div>
+                <div class="stat-lbl">Gerências (<?= $comGer ?> dir.)</div>
+            </div>
+        </div>
+        <div class="stat-card">
             <div class="stat-icon i-warning"><i class="fas fa-user-slash"></i></div>
             <div class="stat-info">
                 <div class="stat-num"><?= $semUser ?></div>
@@ -869,6 +1049,8 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
                     $usuario  = $d['Usuario']        ?? '';
                     $nomeUsr  = $d['NomeUsuario']    ?? '';
                     $estado   = strtoupper(trim((string)($d['EstadoDiretoria'] ?? '')));
+                    $qtdGer   = (int)($d['QtdGerencias'] ?? 0);
+                    $qtdUsr   = (int)($d['QtdUsuarios']  ?? 0);
 
                     $badgeCls = '';
                     $badgeIcon = '';
@@ -882,10 +1064,37 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
                         $badgeIcon = 'fa-ban';
                         $badgeTxt = 'Inativo';
                     }
+
+                    // ⬇️ Decide comportamento do botão de excluir
+                    $hasDeps       = ($qtdGer > 0 || $qtdUsr > 0);
+                    $btnBlocked    = ($qtdGer > 0 && !$isBarreto);       // bloqueio só p/ não-barreto
+                    $btnCascade    = ($hasDeps && $isBarreto);            // laranja p/ barreto
+
+                    $btnClass = 'btn-icon delete';
+                    if ($btnBlocked) $btnClass .= ' is-blocked';
+                    if ($btnCascade) $btnClass .= ' has-cascade';
+
+                    $btnIcon  = $btnBlocked ? 'fa-lock' : 'fa-trash';
+                    if ($btnCascade) $btnIcon = 'fa-trash-can';
+
+                    $btnTitle = $btnBlocked
+                        ? 'Possui gerências vinculadas'
+                        : ($btnCascade
+                            ? 'Excluir (cascade: ' . $qtdGer . ' ger., ' . $qtdUsr . ' usr.)'
+                            : 'Excluir');
+
+                    $badgeGerClass = $btnCascade ? 'badge-gerencias cascade' : 'badge-gerencias';
                 ?>
                     <tr data-id="<?= $id ?>">
                         <td><span class="cell-id">#<?= str_pad($id, 3, '0', STR_PAD_LEFT) ?></span></td>
-                        <td><span class="cell-nome"><?= htmlspecialchars($nomeDir) ?></span></td>
+                        <td>
+                            <span class="cell-nome"><?= htmlspecialchars($nomeDir) ?></span>
+                            <?php if ($qtdGer > 0): ?>
+                                <span class="<?= $badgeGerClass ?>" title="<?= $qtdGer ?> gerência(s) vinculada(s)">
+                                    <i class="fas fa-sitemap"></i> <?= $qtdGer ?>
+                                </span>
+                            <?php endif; ?>
+                        </td>
                         <td><?= htmlspecialchars($diretor ?: '—') ?></td>
                         <td><?= htmlspecialchars($telefone ?: '—') ?></td>
                         <td>
@@ -917,9 +1126,11 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
                                         onclick="abrirEdicao(<?= $id ?>)">
                                     <i class="fas fa-pen"></i>
                                 </button>
-                                <button type="button" class="btn-icon delete" title="Excluir"
-                                        onclick="confirmarExclusao(<?= $id ?>, <?= json_encode($nomeDir) ?>)">
-                                    <i class="fas fa-trash"></i>
+                                <button type="button"
+                                        class="<?= $btnClass ?>"
+                                        title="<?= htmlspecialchars($btnTitle) ?>"
+                                        onclick="confirmarExclusao(<?= $id ?>, <?= htmlspecialchars(json_encode($nomeDir), ENT_QUOTES) ?>, <?= $qtdGer ?>, <?= $qtdUsr ?>)">
+                                    <i class="fas <?= $btnIcon ?>"></i>
                                 </button>
                             </div>
                         </td>
@@ -1046,6 +1257,9 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
     'use strict';
 
     const DIRETORIAS = <?= $diretoriasJson ?>;
+    const IS_BARRETO = <?= $isBarreto ? 'true' : 'false' ?>;
+    const PRIMARY_COLOR = <?= json_encode($themeSafe['primary']) ?>;
+    const WARNING_COLOR = '#f59e0b';
 
     const ptBR = {
         emptyTable:     "Nenhum registro encontrado",
@@ -1120,9 +1334,6 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
     const modalEl = document.getElementById('modalDiretoria');
     const modal   = new bootstrap.Modal(modalEl);
 
-    // ============================================================
-    // ABRIR CRIAÇÃO
-    // ============================================================
     window.abrirCriacao = function () {
         document.getElementById('modalTitle').innerHTML =
             '<i class="fas fa-plus-circle"></i> Nova Diretoria';
@@ -1136,9 +1347,6 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
         setTimeout(() => document.getElementById('fieldNomeDiretoria').focus(), 300);
     };
 
-    // ============================================================
-    // ABRIR EDIÇÃO
-    // ============================================================
     window.abrirEdicao = function (id) {
         const d = DIRETORIAS.find(x => Number(x.DiretoriaID) === Number(id));
         if (!d) return;
@@ -1153,7 +1361,6 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
         document.getElementById('fieldTelefoneDiretor').value = d.TelefoneDiretor || '';
         document.getElementById('fieldUserId').value = d.UserId || '';
 
-        // Normaliza estado (ATIVO / INATIVO)
         let est = String(d.EstadoDiretoria || '').toUpperCase().trim();
         if (est !== 'ATIVO' && est !== 'INATIVO') est = 'ATIVO';
         document.getElementById('fieldEstado').value = est;
@@ -1165,25 +1372,120 @@ if (json_last_error() !== JSON_ERROR_NONE) $diretoriasJson = '[]';
     };
 
     // ============================================================
-    // EXCLUSÃO
+    // EXCLUSÃO COM DUPLA CONFIRMAÇÃO
+    // ⬇️ Barreto: override (cascade) — sem pré-check de bloqueio
     // ============================================================
-    window.confirmarExclusao = function (id, nome) {
+    window.confirmarExclusao = function (id, nome, qtdGerencias, qtdUsuarios) {
+        qtdGerencias = Number(qtdGerencias) || 0;
+        qtdUsuarios  = Number(qtdUsuarios)  || 0;
+
+        // ── Pré-check: bloqueia ANTES (apenas para NÃO-barreto) ──
+        if (!IS_BARRETO && qtdGerencias > 0) {
+            Swal.fire({
+                title: 'Exclusão bloqueada',
+                html:
+                    `A diretoria <b>${nome}</b> possui ` +
+                    `<b style="color:#1e40af;">${qtdGerencias} gerência(s)</b> vinculada(s).<br><br>` +
+                    `<span style="font-size:0.88rem;opacity:0.85;">` +
+                    `Remova ou reassocie as gerências antes de excluir esta diretoria.` +
+                    `</span>`,
+                icon: 'error',
+                confirmButtonText: 'Entendi',
+                confirmButtonColor: PRIMARY_COLOR,
+                allowOutsideClick: false
+            });
+            return;
+        }
+
+        // ── Monta HTML da 1ª confirmação ──
+        let html1 = `A diretoria <b>${nome}</b> será excluída permanentemente.`;
+
+        if (IS_BARRETO) {
+            // Card amarelo explicando a cascata
+            if (qtdGerencias > 0 || qtdUsuarios > 0) {
+                html1 +=
+                    `<div style="text-align:left;background:#fef3c7;padding:12px;border-radius:8px;` +
+                    `border:2px solid ${WARNING_COLOR};margin-top:14px;color:#92400e;">` +
+                    `<b style="display:block;margin-bottom:6px;font-size:0.9rem;">` +
+                    `<i class="fas fa-shield-halved"></i> Modo administrador (barreto)` +
+                    `</b>` +
+                    `<span style="font-size:0.85rem;line-height:1.6;">` +
+                    `Você tem permissão para excluir mesmo com vínculos. ` +
+                    `Ao confirmar:` +
+                    (qtdGerencias > 0
+                        ? `<br>• <b>${qtdGerencias}</b> gerência(s) serão <b>excluídas em cascata</b>`
+                        : '') +
+                    (qtdUsuarios > 0
+                        ? `<br>• <b>${qtdUsuarios}</b> usuário(s) serão <b>desvinculados</b> (cadastro preservado)`
+                        : '') +
+                    `</span></div>`;
+            } else {
+                html1 +=
+                    `<div style="margin-top:14px;color:#16a34a;font-weight:700;font-size:0.85rem;">` +
+                    `<i class="fas fa-check-circle"></i> Sem dependências vinculadas.</div>`;
+            }
+        } else {
+            html1 +=
+                `<br><br>` +
+                `<span style="color:${WARNING_COLOR};font-weight:700;font-size:0.85rem;">` +
+                `<i class="fas fa-exclamation-triangle"></i> ` +
+                `Diretorias com usuários vinculados não podem ser excluídas.` +
+                `</span>`;
+        }
+
+        // ── 1ª CONFIRMAÇÃO ──
         Swal.fire({
             title: 'Excluir diretoria?',
-            html: `A diretoria <b>${nome}</b> será excluída permanentemente.<br>` +
-                  `<span style="color:#ef4444;font-weight:700;font-size:0.85rem;">` +
-                  `Diretorias com usuários vinculados não podem ser excluídas.</span>`,
-            icon: 'warning',
+            html: html1,
+            icon: IS_BARRETO && (qtdGerencias > 0 || qtdUsuarios > 0) ? 'warning' : 'warning',
             showCancelButton: true,
-            confirmButtonText: 'Sim, excluir',
+            confirmButtonText: '<i class="fas fa-arrow-right"></i> Continuar',
             cancelButtonText: 'Cancelar',
             confirmButtonColor: '#ef4444',
-            cancelButtonColor: '#6b7280'
-        }).then(r => {
-            if (r.isConfirmed) {
+            cancelButtonColor: '#6b7280',
+            focusCancel: true,
+            width: 520
+        }).then(function (r1) {
+            if (!r1.isConfirmed) return;
+
+            // ── HTML da 2ª confirmação ──
+            let html2 =
+                `Tem <b>certeza absoluta</b> que deseja excluir<br>` +
+                `<b style="color:#ef4444;font-size:1.05rem;">${nome}</b>?<br><br>` +
+                `<span style="color:#ef4444;font-weight:800;font-size:0.85rem;">` +
+                `<i class="fas fa-skull-crossbones"></i> ` +
+                `Esta ação NÃO pode ser desfeita.</span>`;
+
+            if (IS_BARRETO && (qtdGerencias > 0 || qtdUsuarios > 0)) {
+                html2 +=
+                    `<div style="margin-top:14px;padding:10px;background:#fee2e2;` +
+                    `border:2px solid #ef4444;border-radius:8px;color:#7f1d1d;` +
+                    `font-size:0.82rem;font-weight:700;">` +
+                    `<i class="fas fa-triangle-exclamation"></i> ` +
+                    `Cascade: ${qtdGerencias} gerência(s) + ${qtdUsuarios} usuário(s) afetado(s)` +
+                    `</div>`;
+            }
+
+            // ── 2ª CONFIRMAÇÃO (final) ──
+            Swal.fire({
+                title: 'Confirmação final',
+                html: html2,
+                icon: 'error',
+                showCancelButton: true,
+                confirmButtonText: '<i class="fas fa-trash"></i> Sim, excluir definitivamente',
+                cancelButtonText: '<i class="fas fa-shield-alt"></i> Cancelar',
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor: '#6b7280',
+                focusCancel: true,
+                allowOutsideClick: false,
+                width: 520
+            }).then(function (r2) {
+                if (!r2.isConfirmed) return;
+
+                // Só chega aqui após DUAS confirmações explícitas
                 document.getElementById('deleteId').value = id;
                 document.getElementById('formDelete').submit();
-            }
+            });
         });
     };
 

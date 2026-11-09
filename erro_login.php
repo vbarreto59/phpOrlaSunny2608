@@ -79,7 +79,7 @@
             </p>
             
             <p>
-                Por favor, entre em contato com a administração da Tocca Onze.
+                Por favor, entre em contato com a administração da ORLA IMOB.
             </p>
 
             <hr class="my-4">

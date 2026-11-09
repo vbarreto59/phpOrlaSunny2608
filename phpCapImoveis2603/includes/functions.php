@@ -9,7 +9,7 @@ function log_acesso($usuario_id) {
     $to = "valterpb@hotmail.com";
     $subject = "Acesso ao Sistema de Captação";
     $message = "Usuário: " . $_SESSION['username'] . "\nData: " . date('d/m/Y H:i:s') . "\nIP: $ip";
-    $headers = "From: sendmail@gabnetweb.com.br\r\n";
+    $headers = "From: sendmail@sunnyimob.com.br\r\n";
     mail($to, $subject, $message, $headers);
 }
 

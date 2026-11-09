@@ -29,7 +29,6 @@ $totalEmpreend = count($empreendimentos);
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="refresh" content="600">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lista de Empreendimentos</title>
 
@@ -415,7 +414,6 @@ $totalEmpreend = count($empreendimentos);
         /* ============================================================ */
         .dataTables_wrapper { color: var(--text-color); padding: 0; }
 
-        /* 🔇 Oculta o campo de busca nativo do DataTables — usamos o nosso */
         .dataTables_wrapper .dataTables_filter { display: none !important; }
 
         .dataTables_wrapper .dataTables_length select {
@@ -583,7 +581,6 @@ $totalEmpreend = count($empreendimentos);
 <!-- ============================================================ -->
 <div class="toolbar">
     <div class="toolbar-left">
-        <!-- 🔍 CAMPO DE BUSCA CUSTOMIZADO -->
         <div class="search-box">
             <i class="fas fa-search search-icon"></i>
             <input
@@ -624,7 +621,16 @@ $totalEmpreend = count($empreendimentos);
         </thead>
         <tbody>
         <?php foreach ($empreendimentos as $emp): ?>
-            <?php $cont++; ?>
+            <?php
+            $cont++;
+
+            // ⬇️ Fallback da imagem: usa a imagem do empreendimento se existir;
+            //    caso contrário, cai para sem-imagem.jpg
+            $imgEmpreend = 'card/' . $emp['Empreend_ID'] . '.jpg';
+            if (!file_exists($imgEmpreend)) {
+                $imgEmpreend = 'card/sem-imagem.jpg';
+            }
+            ?>
             <tr>
                 <td><?php echo $cont; ?></td>
                 <td><?php echo htmlspecialchars($emp['Empreend_ID']); ?></td>
@@ -640,9 +646,9 @@ $totalEmpreend = count($empreendimentos);
                             <span class="badge-oculto">Oculto</span>
                         <?php endif; ?>
                     </div>
-                    <?php if (file_exists('card/' . $emp['Empreend_ID'] . '.jpg')): ?>
-                        <img src="card/<?php echo $emp['Empreend_ID']; ?>.jpg" alt="Imagem">
-                    <?php endif; ?>
+                    <img src="<?php echo htmlspecialchars($imgEmpreend); ?>"
+                         alt="<?php echo htmlspecialchars($emp['NomeEmpreendimento']); ?>"
+                         onerror="this.onerror=null; this.src='card/sem-imagem.jpg';">
                 </td>
                 <td>
                     <div class="btns-links">
@@ -736,8 +742,7 @@ $(document).ready(function() {
     let modoCards = true;
 
     // ============================================================
-    // 2) 🔍 Filtro customizado — aplica em Localidade (col 2) e
-    //    Empreendimento (col 3, que já inclui o nome da empresa)
+    // 2) Filtro customizado
     // ============================================================
     $.fn.dataTable.ext.search.push(function(settings, data) {
         if (settings.nTable.id !== 'tabelaEmpreendimentos') return true;
@@ -801,15 +806,14 @@ $(document).ready(function() {
     atualizarModo();
 
     // ============================================================
-    // 5) Sempre que a tabela redesenhar (filtro, ordenação, page…)
-    //    regenera os cards se estiver em modo Card.
+    // 5) Redesenha cards quando a tabela redesenhar
     // ============================================================
     $tabela.on('draw.dt', function() {
         if (modoCards) gerarCards();
     });
 
     // ============================================================
-    // 6) Busca customizada — debounce 200ms + botão de limpar
+    // 6) Busca customizada
     // ============================================================
     let searchTimer;
     $search.on('input', function() {
@@ -822,14 +826,12 @@ $(document).ready(function() {
         }, 200);
     });
 
-    // ESC limpa busca
     $search.on('keydown', function(e) {
         if (e.key === 'Escape') {
             $(this).val('').trigger('input');
         }
     });
 
-    // Botão X
     $searchClear.on('click', function() {
         $search.val('').trigger('input').focus();
     });
