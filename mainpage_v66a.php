@@ -1085,35 +1085,43 @@ body {
         <div class="section-card-body">
             <form method="GET" action="empreend_v3_resultados.php" target="_blank">
                 <div class="row g-3">
-                    <div class="col-md-3 col-sm-6 col-12 filter-section">
+                    
+                    <!-- NOVO CAMPO: NOME DO EMPREENDIMENTO -->
+                    <div class="col-md-4 col-sm-6 col-12 filter-section">
+                        <label class="form-label"><i class="fas fa-search"></i> Empreendimento</label>
+                        <input type="text" name="nome_empreendimento" class="form-control" placeholder="Nome ou parte do nome..." value="<?= htmlspecialchars($_GET['nome_empreendimento'] ?? '') ?>">
+                    </div>
+
+                    <div class="col-md-4 col-sm-6 col-12 filter-section">
                         <label class="form-label"><i class="fas fa-map-marker-alt"></i> Localidade</label>
                         <select name="localidade" class="form-select">
                             <option value="">Qualquer</option>
                             <?php foreach ($localidades as $localidade) {
                                 $v = htmlspecialchars($localidade['Localidade']);
-                                echo "<option value=\"$v\">$v</option>";
+                                $sel = (isset($_GET['localidade']) && $_GET['localidade'] == $v) ? 'selected' : '';
+                                echo "<option value=\"$v\" $sel>$v</option>";
                             } ?>
                         </select>
                     </div>
 
-                    <div class="col-md-3 col-sm-6 col-12 filter-section">
+                    <div class="col-md-4 col-sm-6 col-12 filter-section">
                         <label class="form-label"><i class="fas fa-bed"></i> Tipologia</label>
                         <select name="tipologia" class="form-select">
                             <option value="">Qualquer</option>
-                            <option value="Bang">Bang</option>
-                            <option value="Studio">Studio</option>
-                            <option value="Casa">Casa</option>
-                            <option value="1q">1 Quarto</option>
-                            <option value="2q">2 Quartos</option>
-                            <option value="3q">3 Quartos</option>
-                            <option value="4q">4 Quartos</option>
-                            <option value="5q">5+ Quartos</option>
+                            <?php
+                            $tipologias = ['Bang', 'Studio', 'Casa', '1q' => '1 Quarto', '2q' => '2 Quartos', '3q' => '3 Quartos', '4q' => '4 Quartos', '5q' => '5+ Quartos'];
+                            foreach ($tipologias as $val => $label) {
+                                $val = is_numeric($val) ? $label : $val;
+                                $sel = (isset($_GET['tipologia']) && $_GET['tipologia'] == $val) ? 'selected' : '';
+                                echo "<option value=\"$val\" $sel>$label</option>";
+                            }
+                            ?>
                         </select>
                     </div>
 
                     <div class="col-md-3 col-sm-6 col-12 filter-section">
                         <label class="form-label"><i class="fas fa-tag"></i> Orçamento (R$)</label>
-                        <input type="text" name="orcamento_cliente" class="form-control" placeholder="R$ 0,00" id="orcamentoInput">
+                        <input type="text" name="orcamento_cliente" class="form-control" placeholder="R$ 0,00" id="orcamentoInput" value="<?= htmlspecialchars($_GET['orcamento_cliente'] ?? '') ?>">
                     </div>
 
                     <div class="col-md-3 col-sm-6 col-12 filter-section">
@@ -1122,7 +1130,8 @@ body {
                             <option value="">Qualquer</option>
                             <?php foreach ($anosEntrega as $ano) {
                                 $af = $ano['AnoEntrega'];
-                                echo "<option value=\"$af\">$af</option>";
+                                $sel = (isset($_GET['data_entrega']) && $_GET['data_entrega'] == $af) ? 'selected' : '';
+                                echo "<option value=\"$af\" $sel>$af</option>";
                             } ?>
                         </select>
                     </div>
@@ -1140,16 +1149,16 @@ body {
                         </select>
                     </div>
 
-                    <div class="col-md-4 col-sm-6 col-12">
+                    <div class="col-md-3 col-sm-6 col-12">
                         <label class="form-label"><i class="fas fa-sliders-h"></i> Características</label>
                         <div class="d-flex gap-2 flex-wrap">
                             <label class="neo-switch">
-                                <input type="checkbox" name="BeiraMar" id="BeiraMar">
+                                <input type="checkbox" name="BeiraMar" id="BeiraMar" <?= isset($_GET['BeiraMar']) ? 'checked' : '' ?>>
                                 <span class="switch-track"></span>
                                 <span><i class="fas fa-umbrella-beach"></i> Beira Mar</span>
                             </label>
                             <label class="neo-switch">
-                                <input type="checkbox" name="Varanda" id="Varanda">
+                                <input type="checkbox" name="Varanda" id="Varanda" <?= isset($_GET['Varanda']) ? 'checked' : '' ?>>
                                 <span class="switch-track"></span>
                                 <span><i class="fas fa-couch"></i> Varanda</span>
                             </label>
@@ -1477,7 +1486,9 @@ body {
     }
 
     $(document).ready(function() {
-        $('#orcamentoInput').inputmask('currency', {
+        // Aplica a máscara no campo de orçamento
+        var orcamentoInput = $('#orcamentoInput');
+        orcamentoInput.inputmask('currency', {
             prefix: 'R$ ',
             radixPoint: ',',
             groupSeparator: '.',
@@ -1487,11 +1498,24 @@ body {
             removeMaskOnSubmit: false
         });
 
+        // Se o campo já veio com um valor via GET, a máscara assume
+        var valorInicial = "<?= htmlspecialchars($_GET['orcamento_cliente'] ?? '') ?>";
+        if (valorInicial) {
+            orcamentoInput.val(valorInicial);
+        }
+
         $('form').on('submit', function(e) {
             e.preventDefault();
 
-            var rawValue = $('#orcamentoInput').inputmask('unmaskedvalue');
-            rawValue = rawValue.replace(',', '.');
+            var rawValue = orcamentoInput.inputmask('unmaskedvalue');
+            if (rawValue) {
+                rawValue = rawValue.replace(',', '.');
+            } else {
+                rawValue = '';
+            }
+
+            // Remove inputs hidden antigos para não duplicar
+            $('input[name="orcamento_cliente_raw"]').remove();
 
             $('<input>').attr({
                 type: 'hidden',
@@ -1499,7 +1523,8 @@ body {
                 value: rawValue
             }).appendTo(this);
 
-            $('#orcamentoInput').prop('disabled', true);
+            // Desabilita temporariamente para não enviar o valor mascarado
+            orcamentoInput.prop('disabled', true);
             this.submit();
         });
     });

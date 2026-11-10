@@ -1,12 +1,20 @@
 <?php
-// login_p1.php - Versão com tema neobrutalista + logo da empresa na tela de loading
-// Correção: caminho do logo tratado (pasta vs caminho completo + URL-safe)
+// login_p1.php - Versão completa com tema, logo dinâmico e envio de e-mail
+
+// ============================================================
+// CONFIGURAÇÕES INICIAIS E SEGURANÇA
+// ============================================================
 session_start();
+
+// Log de erros (desative a exibição na tela em produção)
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+error_reporting(E_ALL);
 
 require_once "conn.php";
 require_once "usr_acoes.php";
 require_once 'send_email.php';
-require_once 'theme_config.php'; // <-- CARREGA O TEMA
+require_once 'theme_config.php'; // CARREGA O TEMA
 
 // Configuração da Manutenção
 $sistema_id = 'sunny';
@@ -57,15 +65,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['Ativo']     = $ativo;
         $_SESSION['Licenca']   = $licenca;
 
-        // ==== carrega o logo/cores da empresa deste usuário ====
-        // Usa $pdo já criado em conn.php; NÃO abre nova conexão.
+        // ==== Carrega o logo/cores da empresa deste usuário ====
         require __DIR__ . '/config_empresa.php';
 
-        // --- ENVIO DE E-MAIL (Lógica preservada) ---
-        $nomeExibido = Nz($userData['Nome'], $userData['Usuario']);
-        $assunto = mb_encode_mimeheader("SI Login - " . $userData['Usuario'], 'UTF-8', 'B');
-        $destinatario = 'valterpb@gmail.com,valterpb@hotmail.com';
-        // enviarEmailSGVendas($destinatario, $assunto, $mensagemHTML);
+        // =================================================================
+        // ENVIO DE E-MAIL DE ALERTA DE LOGIN
+        // =================================================================
+        $nomeExibido  = Nz($userData['Nome'], $userData['Usuario']);
+        $assunto      = mb_encode_mimeheader("Sunny Orla Login - " . $userData['Usuario'], 'UTF-8', 'B');
+        $destinatario = 'valterpb@hotmail.com';
+        
+        // Monta o corpo do e-mail HTML
+        $mensagemHTML = "
+            <div style='font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;'>
+                <div style='background-color: #800020; color: #fff; padding: 20px; text-align: center;'>
+                    <h2 style='margin: 0;'>Alerta de Login</h2>
+                </div>
+                <div style='padding: 20px;'>
+                    <p>Um novo acesso foi realizado no sistema <strong>SunnyImob</strong>.</p>
+                    <table style='width: 100%; border-collapse: collapse; margin-top: 15px;'>
+                        <tr>
+                            <td style='padding: 8px 0; border-bottom: 1px solid #eee;'><strong>Usuário:</strong></td>
+                            <td style='padding: 8px 0; border-bottom: 1px solid #eee;'>{$userData['Usuario']}</td>
+                        </tr>
+                        <tr>
+                            <td style='padding: 8px 0; border-bottom: 1px solid #eee;'><strong>Nome:</strong></td>
+                            <td style='padding: 8px 0; border-bottom: 1px solid #eee;'>{$nomeExibido}</td>
+                        </tr>
+                        <tr>
+                            <td style='padding: 8px 0; border-bottom: 1px solid #eee;'><strong>ID da Empresa:</strong></td>
+                            <td style='padding: 8px 0; border-bottom: 1px solid #eee;'>{$_SESSION['EmpresaSunny']}</td>
+                        </tr>
+                    </table>
+                    <p style='margin-top: 20px; font-size: 12px; color: #777;'>
+                        Este é um e-mail automático. Não responda.
+                    </p>
+                </div>
+            </div>
+        ";
+
+        // Envia o e-mail
+        $envio = enviarEmailSGVendas($destinatario, $assunto, $mensagemHTML);
+        
+        // Se houver falha no envio, registra no log do PHP sem travar o login do usuário
+        if (!$envio['status']) {
+            error_log("Falha no envio de e-mail de login: " . $envio['msg']);
+        }
+        // =================================================================
 
         if ($ativo === 1 && $licenca === true) {
 
@@ -81,25 +127,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Se guardou só o nome do arquivo, prefixa a pasta 'img/'.
             if ($confLogo !== '') {
                 $logoLoading = (strpos($confLogo, '/') !== false)
-                    ? $confLogo                  // ex: uploads/logos/logo.png
-                    : 'img/' . $confLogo;        // ex: logo.png → img/logo.png
+                    ? $confLogo                  
+                    : 'img/' . $confLogo;        
             } else {
                 $logoLoading = 'img/sunnyimob.jpg'; // fallback
             }
 
             // Codifica cada segmento do caminho para não quebrar com espaço/acento
             $logoUrl = implode('/', array_map('rawurlencode', explode('/', $logoLoading)));
-
-            // --- DEBUG (descomente se precisar investigar) ---
-            // echo '<pre style="background:#fff;padding:1rem;border:1px solid #000;">';
-            // var_export([
-            //     'Conf_ImgLogo (sessão)' => $confLogo,
-            //     'logoLoading'           => $logoLoading,
-            //     'logoUrl'               => $logoUrl,
-            //     'file_exists'           => file_exists(__DIR__ . '/' . $logoLoading),
-            // ]);
-            // echo '</pre>';
-            // ---------------------------------------------------------------
 
             ?>
             <!DOCTYPE html>
@@ -418,7 +453,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
 
         <div class="footer-text">
-            SunnyImob • 2026
+            SunnyImob • <?= date('Y') ?>
         </div>
     </div>
 </div>

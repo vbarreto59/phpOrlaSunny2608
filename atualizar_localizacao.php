@@ -77,7 +77,7 @@ try {
 // 4) Verifica existência + valor atual
 // ============================================================
 try {
-    $stmt = $db->prepare("SELECT Localizacao, LinkMapa FROM Empreendimento WHERE Empreend_ID = :id");
+    $stmt = $db->prepare("SELECT Localizacao, LinkMapa FROM empreendimento WHERE Empreend_ID = :id");
     $stmt->execute([':id' => $id]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -105,7 +105,7 @@ try {
 // 5) Update
 // ============================================================
 try {
-    $stmt = $db->prepare("UPDATE Empreendimento SET Localizacao = :loc, LinkMapa = :map WHERE Empreend_ID = :id");
+    $stmt = $db->prepare("UPDATE empreendimento SET Localizacao = :loc, LinkMapa = :map WHERE Empreend_ID = :id");
     $stmt->execute([
         ':loc' => $localizacao,
         ':map' => $linkmapa,

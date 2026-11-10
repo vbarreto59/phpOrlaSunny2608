@@ -1,10 +1,9 @@
 <?php
-// empreend_v3_resultados.php - Versão com tema neobrutalista
+// empreend_v3_resultados.php - Versão com filtro corrigido e modo debug
 session_start();
 
-// Incluir arquivos necessários
 require_once 'conn.php';
-require_once 'theme_config.php'; // <-- CARREGA O TEMA
+require_once 'theme_config.php'; 
 
 // Verificar se o usuário está logado
 if (empty($_SESSION['Usuario'])) {
@@ -49,7 +48,23 @@ function isValidGoogleMapsLink($link) {
 
 $conditions = ["Ocultar = 0"];
 $params = [];
+$avisoBuscaCurta = '';
 
+// Filtro por Nome do Empreendimento (Busca parcial a partir de 3 letras)
+if (isset($_GET['nome_empreendimento']) && trim($_GET['nome_empreendimento']) !== '') {
+    $nomeEmpreendimento = trim($_GET['nome_empreendimento']);
+    
+    // Usando strlen para evitar erro se mbstring estiver desativado no servidor
+    if (strlen($nomeEmpreendimento) >= 3) {
+        // O LOWER() garante que a busca seja case-insensitive independente do collation do banco
+        $conditions[] = "LOWER(NomeEmpreendimento) LIKE LOWER(:nome_empreendimento)";
+        $params[':nome_empreendimento'] = "%" . $nomeEmpreendimento . "%";
+    } else {
+        $avisoBuscaCurta = "O termo de busca '{$nomeEmpreendimento}' é muito curto. O filtro por nome exige pelo menos 3 letras.";
+    }
+}
+
+// Outros filtros
 if (!empty($_GET['localidade'])) {
     $localidade = trim($_GET['localidade']);
     $conditions[] = "Localidade LIKE :localidade";
@@ -90,11 +105,14 @@ if (!empty($_GET['orcamento_cliente_raw'])) {
     $params[':orcamento_cliente'] = (float)$_GET['orcamento_cliente_raw'];
 }
 
+// Monta o SQL final
 $sql = "SELECT * FROM empreendimento WHERE " . implode(" AND ", $conditions);
 $sql .= " ORDER BY Localidade, AnoEntrega, NomeEmpreendimento";
 
 try {
     $stmt = $conn->prepare($sql);
+    
+    // Faz o bind dos parâmetros
     foreach ($params as $key => $value) {
         if (is_int($value)) {
             $stmt->bindValue($key, $value, PDO::PARAM_INT);
@@ -104,6 +122,7 @@ try {
             $stmt->bindValue($key, $value, PDO::PARAM_STR);
         }
     }
+    
     $stmt->execute();
     $empreendimentos = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $qtdRegistros = count($empreendimentos);
@@ -125,9 +144,7 @@ try {
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 
     <style>
-        /* ============================================================ */
-        /* ESTILOS BASEADOS NO TEMA (via variáveis CSS)                  */
-        /* ============================================================ */
+        /* ... (Mantenha o CSS original que você já tem) ... */
         :root {
             --primary: <?php echo $theme['primary']; ?>;
             --primary-dark: <?php echo $theme['primary_dark']; ?>;
@@ -146,265 +163,47 @@ try {
             --warning: #fd7e14;
         }
 
-        body {
-            font-family: 'Inter', 'Segoe UI', 'Roboto', sans-serif;
-            background: var(--bg-body);
-            color: var(--text-color);
-            min-height: 100vh;
-            padding: 1rem;
-        }
-
-        /* Container principal */
-        .main-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            background: var(--card-bg);
-            border: 3px solid var(--shadow-color);
-            border-radius: 16px;
-            box-shadow: 6px 6px 0px 0px var(--shadow-color);
-            overflow: hidden;
-        }
-
-        /* Header */
-        .header {
-            background: var(--primary);
-            color: #fff;
-            padding: 1.5rem;
-            text-align: center;
-            position: relative;
-            border-bottom: 4px solid var(--shadow-color);
-            box-shadow: 0 4px 0px 0px var(--shadow-color);
-        }
-        .header h1 img {
-            max-height: 60px;
-            border: 2px solid var(--shadow-color);
-            border-radius: 8px;
-            box-shadow: 3px 3px 0px 0px var(--shadow-color);
-            background: #fff;
-            padding: 4px;
-        }
-        .header h3 {
-            font-weight: 800;
-            margin: 0.5rem 0 0;
-        }
-
-        .user-info {
-            position: absolute;
-            top: 0.8rem;
-            right: 1.2rem;
-            background: rgba(255,255,255,0.15);
-            border: 2px solid var(--shadow-color);
-            border-radius: 30px;
-            padding: 0.4rem 1.2rem;
-            font-weight: 600;
-            box-shadow: 3px 3px 0px 0px var(--shadow-color);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        .user-info a {
-            color: #fff;
-            transition: all 0.15s;
-        }
-        .user-info a:hover {
-            opacity: 0.8;
-            transform: translateY(-2px);
-        }
-
-        /* Conteúdo */
-        .content {
-            padding: 1.5rem;
-        }
-
-        /* Card de resultados */
-        .card-resultados {
-            background: var(--card-bg);
-            border: 2px solid var(--shadow-color);
-            border-radius: 12px;
-            box-shadow: 4px 4px 0px 0px var(--shadow-color);
-            overflow: hidden;
-        }
-        .card-resultados .card-header {
-            background: var(--primary);
-            color: #fff;
-            padding: 0.8rem 1.5rem;
-            font-weight: 700;
-            font-size: 1.1rem;
-            border-bottom: 3px solid var(--shadow-color);
-        }
-        .card-resultados .card-header .badge {
-            background: var(--card-bg);
-            color: var(--text-color);
-            border: 2px solid var(--shadow-color);
-            box-shadow: 2px 2px 0px 0px var(--shadow-color);
-        }
-        .card-resultados .card-body {
-            padding: 1.5rem;
-        }
-
-        /* Alertas neobrutalistas */
-        .alert-neo {
-            border: 2px solid var(--shadow-color);
-            border-radius: 12px;
-            box-shadow: 3px 3px 0px 0px var(--shadow-color);
-            padding: 1rem;
-            font-weight: 600;
-        }
-        .alert-info-neo {
-            background: var(--info);
-            color: #fff;
-        }
-
-        /* Botões */
-        .btn-neo {
-            background: var(--btn-bg);
-            color: var(--btn-text);
-            border: 2px solid var(--shadow-color);
-            box-shadow: 3px 3px 0px 0px var(--shadow-color);
-            border-radius: 10px;
-            padding: 0.5rem 1.5rem;
-            font-weight: 700;
-            transition: all 0.15s;
-        }
-        .btn-neo:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 5px 5px 0px 0px var(--shadow-color);
-            background: var(--btn-hover);
-            color: #fff;
-        }
-        .btn-neo:active {
-            transform: translate(2px, 2px);
-            box-shadow: 1px 1px 0px 0px var(--shadow-color);
-        }
-        .btn-neo-secondary {
-            background: #6c757d;
-            color: #fff;
-            border: 2px solid var(--shadow-color);
-            box-shadow: 3px 3px 0px 0px var(--shadow-color);
-        }
-        .btn-neo-secondary:hover {
-            background: #5a6268;
-            transform: translate(-2px, -2px);
-            box-shadow: 5px 5px 0px 0px var(--shadow-color);
-        }
-
-        .btn-ficha {
-            background: var(--primary);
-            color: #fff;
-            border: 2px solid var(--shadow-color);
-            box-shadow: 3px 3px 0px 0px var(--shadow-color);
-            border-radius: 8px;
-            padding: 0.4rem 1rem;
-            font-weight: 700;
-            transition: all 0.15s;
-            display: inline-block;
-            margin: 0.2rem 0.2rem 0.2rem 0;
-            font-size: 0.85rem;
-            text-decoration: none;
-        }
-        .btn-ficha:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 5px 5px 0px 0px var(--shadow-color);
-            background: var(--primary-dark);
-            color: #fff;
-        }
-
-        /* Tabela */
-        .table-neo {
-            border-collapse: collapse;
-            width: 100%;
-        }
-        .table-neo th {
-            background: var(--primary);
-            color: #fff;
-            border: 2px solid var(--shadow-color);
-            font-weight: 700;
-            padding: 0.8rem;
-        }
-        .table-neo td {
-            border: 1px solid var(--shadow-color);
-            padding: 0.8rem;
-            vertical-align: top;
-        }
-        .table-neo tbody tr:hover {
-            background: rgba(0,0,0,0.02);
-        }
-
-        /* Badges */
-        .badge-neo {
-            border: 2px solid var(--shadow-color);
-            box-shadow: 2px 2px 0px 0px var(--shadow-color);
-            padding: 0.3rem 0.7rem;
-            border-radius: 20px;
-            font-weight: 700;
-        }
-        .badge-primary-neo {
-            background: var(--primary);
-            color: #fff;
-        }
-        .badge-success-neo {
-            background: var(--success);
-            color: #fff;
-        }
-
-        /* Mapa Leaflet */
-        .leaflet-map {
-            height: 300px;
-            width: 100%;
-            margin-top: 10px;
-            border-radius: 12px;
-            border: 2px solid var(--shadow-color);
-            box-shadow: 3px 3px 0px 0px var(--shadow-color);
-        }
-
-        /* Modal de mapa flutuante */
-        #leaflet-map-container {
-            z-index: 1050;
-            background: var(--card-bg);
-            border: 3px solid var(--shadow-color);
-            border-radius: 16px;
-            box-shadow: 8px 8px 0px 0px var(--shadow-color);
-            padding: 1.5rem;
-        }
-        #leaflet-map-container .btn-danger {
-            background: var(--danger);
-            color: #fff;
-            border: 2px solid var(--shadow-color);
-            box-shadow: 3px 3px 0px 0px var(--shadow-color);
-        }
-        #leaflet-map-container .btn-danger:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 5px 5px 0px 0px var(--shadow-color);
-        }
-
-        /* Modal de imagem (Bootstrap) */
-        .modal-content {
-            background: var(--card-bg);
-            border: 3px solid var(--shadow-color);
-            border-radius: 16px;
-            box-shadow: 8px 8px 0px 0px var(--shadow-color);
-        }
-        .modal-header {
-            border-bottom: 2px solid var(--shadow-color);
-        }
-        .modal-footer {
-            border-top: 2px solid var(--shadow-color);
-        }
-
-        /* Responsivo */
+        body { font-family: 'Inter', 'Segoe UI', 'Roboto', sans-serif; background: var(--bg-body); color: var(--text-color); min-height: 100vh; padding: 1rem; }
+        .main-container { max-width: 1400px; margin: 0 auto; background: var(--card-bg); border: 3px solid var(--shadow-color); border-radius: 16px; box-shadow: 6px 6px 0px 0px var(--shadow-color); overflow: hidden; }
+        .header { background: var(--primary); color: #fff; padding: 1.5rem; text-align: center; position: relative; border-bottom: 4px solid var(--shadow-color); box-shadow: 0 4px 0px 0px var(--shadow-color); }
+        .header h1 img { max-height: 60px; border: 2px solid var(--shadow-color); border-radius: 8px; box-shadow: 3px 3px 0px 0px var(--shadow-color); background: #fff; padding: 4px; }
+        .header h3 { font-weight: 800; margin: 0.5rem 0 0; }
+        .user-info { position: absolute; top: 0.8rem; right: 1.2rem; background: rgba(255,255,255,0.15); border: 2px solid var(--shadow-color); border-radius: 30px; padding: 0.4rem 1.2rem; font-weight: 600; box-shadow: 3px 3px 0px 0px var(--shadow-color); display: flex; align-items: center; gap: 12px; }
+        .user-info a { color: #fff; transition: all 0.15s; }
+        .user-info a:hover { opacity: 0.8; transform: translateY(-2px); }
+        .content { padding: 1.5rem; }
+        .card-resultados { background: var(--card-bg); border: 2px solid var(--shadow-color); border-radius: 12px; box-shadow: 4px 4px 0px 0px var(--shadow-color); overflow: hidden; }
+        .card-resultados .card-header { background: var(--primary); color: #fff; padding: 0.8rem 1.5rem; font-weight: 700; font-size: 1.1rem; border-bottom: 3px solid var(--shadow-color); }
+        .card-resultados .card-header .badge { background: var(--card-bg); color: var(--text-color); border: 2px solid var(--shadow-color); box-shadow: 2px 2px 0px 0px var(--shadow-color); }
+        .card-resultados .card-body { padding: 1.5rem; }
+        .alert-neo { border: 2px solid var(--shadow-color); border-radius: 12px; box-shadow: 3px 3px 0px 0px var(--shadow-color); padding: 1rem; font-weight: 600; }
+        .alert-info-neo { background: var(--info); color: #fff; }
+        .alert-warning-neo { background: var(--warning); color: #fff; }
+        .btn-neo { background: var(--btn-bg); color: var(--btn-text); border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color); border-radius: 10px; padding: 0.5rem 1.5rem; font-weight: 700; transition: all 0.15s; }
+        .btn-neo:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0px 0px var(--shadow-color); background: var(--btn-hover); color: #fff; }
+        .btn-neo:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0px 0px var(--shadow-color); }
+        .btn-neo-secondary { background: #6c757d; color: #fff; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color); }
+        .btn-neo-secondary:hover { background: #5a6268; transform: translate(-2px, -2px); box-shadow: 5px 5px 0px 0px var(--shadow-color); }
+        .btn-ficha { background: var(--primary); color: #fff; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color); border-radius: 8px; padding: 0.4rem 1rem; font-weight: 700; transition: all 0.15s; display: inline-block; margin: 0.2rem 0.2rem 0.2rem 0; font-size: 0.85rem; text-decoration: none; }
+        .btn-ficha:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0px 0px var(--shadow-color); background: var(--primary-dark); color: #fff; }
+        .table-neo { border-collapse: collapse; width: 100%; }
+        .table-neo th { background: var(--primary); color: #fff; border: 2px solid var(--shadow-color); font-weight: 700; padding: 0.8rem; }
+        .table-neo td { border: 1px solid var(--shadow-color); padding: 0.8rem; vertical-align: top; }
+        .table-neo tbody tr:hover { background: rgba(0,0,0,0.02); }
+        .badge-neo { border: 2px solid var(--shadow-color); box-shadow: 2px 2px 0px 0px var(--shadow-color); padding: 0.3rem 0.7rem; border-radius: 20px; font-weight: 700; }
+        .badge-primary-neo { background: var(--primary); color: #fff; }
+        .badge-success-neo { background: var(--success); color: #fff; }
+        .leaflet-map { height: 300px; width: 100%; margin-top: 10px; border-radius: 12px; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color); }
+        #leaflet-map-container { z-index: 1050; background: var(--card-bg); border: 3px solid var(--shadow-color); border-radius: 16px; box-shadow: 8px 8px 0px 0px var(--shadow-color); padding: 1.5rem; }
+        #leaflet-map-container .btn-danger { background: var(--danger); color: #fff; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color); }
+        #leaflet-map-container .btn-danger:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0px 0px var(--shadow-color); }
+        .modal-content { background: var(--card-bg); border: 3px solid var(--shadow-color); border-radius: 16px; box-shadow: 8px 8px 0px 0px var(--shadow-color); }
+        .modal-header { border-bottom: 2px solid var(--shadow-color); }
+        .modal-footer { border-top: 2px solid var(--shadow-color); }
         @media (max-width: 768px) {
-            body { padding: 0.5rem; }
-            .main-container { border-radius: 12px; }
-            .user-info {
-                position: static;
-                justify-content: center;
-                margin-top: 0.5rem;
-                display: inline-flex;
-            }
-            .header { padding: 1rem; }
-            .content { padding: 1rem; }
-            .card-resultados .card-body { padding: 1rem; }
-            .table-neo td, .table-neo th { padding: 0.5rem; }
+            body { padding: 0.5rem; } .main-container { border-radius: 12px; }
+            .user-info { position: static; justify-content: center; margin-top: 0.5rem; display: inline-flex; }
+            .header { padding: 1rem; } .content { padding: 1rem; } .card-resultados .card-body { padding: 1rem; } .table-neo td, .table-neo th { padding: 0.5rem; }
         }
     </style>
 </head>
@@ -422,12 +221,26 @@ try {
         </div>
        
         <div class="content">
-            <!-- Botão Voltar -->
-            <div class="mb-3">
-                <a class="btn btn-neo-secondary" href="javascript:window.close()">
-                    <i class="fas fa-arrow-left"></i> Voltar
+            <!-- Botão Voltar e Indicador de Busca -->
+            <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <a class="btn btn-neo-secondary" href="mainpage_v66a.php">
+                    <i class="fas fa-arrow-left"></i> Voltar ao Painel
                 </a>
+                
+                <?php if (!empty($_GET['nome_empreendimento']) && strlen(trim($_GET['nome_empreendimento'])) >= 3): ?>
+                    <span class="badge bg-secondary p-2 fs-6 shadow-sm" style="border: 2px solid #000;">
+                        <i class="fas fa-search"></i> Buscando por: "<?= htmlspecialchars($_GET['nome_empreendimento']) ?>"
+                    </span>
+                <?php endif; ?>
             </div>
+
+            <!-- Aviso se a busca foi muito curta -->
+            <?php if ($avisoBuscaCurta): ?>
+                <div class="alert alert-neo alert-warning-neo mb-4 d-flex align-items-center gap-2">
+                    <i class="fas fa-exclamation-triangle fs-4"></i>
+                    <div><?= htmlspecialchars($avisoBuscaCurta) ?></div>
+                </div>
+            <?php endif; ?>
             
             <!-- Card Resultados -->
             <div class="card-resultados">
@@ -482,19 +295,17 @@ try {
                                         ?>
                                         <tr>
                                             <td>
-                                                <!--  -->
-<?php 
-$imagem_path   = "card/" . $empreend['Empreend_ID'] . ".jpg";
-$imagem_generica = "card/sem-imagem.jpg"; // ajuste o caminho se necessário
-$imagem_final  = file_exists($imagem_path) ? $imagem_path : $imagem_generica;
-?>
-<img src="<?= htmlspecialchars($imagem_final) ?>" 
-     class="img-fluid rounded mb-2" 
-     style="max-height: 200px; width: auto; cursor: pointer; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color); object-fit: cover;"
-     onclick="openImageModal(this)"
-     onerror="this.onerror=null; this.src='<?= htmlspecialchars($imagem_generica) ?>';"
-     alt="<?= htmlspecialchars($empreend['NomeEmpreendimento']) ?>">
-                                                <!--  -->
+                                                <?php 
+                                                $imagem_path     = "card/" . $empreend['Empreend_ID'] . ".jpg";
+                                                $imagem_generica = "card/sem-imagem.jpg"; 
+                                                $imagem_final    = file_exists($imagem_path) ? $imagem_path : $imagem_generica;
+                                                ?>
+                                                <img src="<?= htmlspecialchars($imagem_final) ?>" 
+                                                     class="img-fluid rounded mb-2" 
+                                                     style="max-height: 200px; width: auto; cursor: pointer; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color); object-fit: cover;"
+                                                     onclick="openImageModal(this)"
+                                                     onerror="this.onerror=null; this.src='<?= htmlspecialchars($imagem_generica) ?>';"
+                                                     alt="<?= htmlspecialchars($empreend['NomeEmpreendimento']) ?>">
                                                 
                                                 <div class='mt-2'>
                                                     <h5><?= htmlspecialchars(strtoupper(removeNumeros($empreend['NomeEmpreendimento']))) ?></h5>
@@ -599,6 +410,17 @@ $imagem_final  = file_exists($imagem_path) ? $imagem_path : $imagem_generica;
         <div id="single-leaflet-map" class="leaflet-map"></div>
     </div>
 
+    <!-- DEBUG OCULTO (Acesse com ?debug=1 na URL) -->
+    <?php if (isset($_GET['debug']) && $_GET['debug'] == 1): ?>
+    <div style="background:#fff; border:3px solid red; padding:20px; margin:20px auto; max-width:1400px; font-family:monospace;">
+        <h3>DEBUG DA CONSULTA</h3>
+        <p><b>Variáveis GET recebidas:</b><br> <pre><?= print_r($_GET, true) ?></pre></p>
+        <p><b>Condições aplicadas (Array):</b><br> <pre><?= print_r($conditions, true) ?></pre></p>
+        <p><b>Parâmetros (Array):</b><br> <pre><?= print_r($params, true) ?></pre></p>
+        <p><b>SQL Gerado:</b><br> <pre><?= htmlspecialchars($sql) ?></pre></p>
+    </div>
+    <?php endif; ?>
+
     <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -612,7 +434,8 @@ $imagem_final  = file_exists($imagem_path) ? $imagem_path : $imagem_generica;
                     "url": "https://cdn.datatables.net/plug-ins/1.11.5/i18n/pt-BR.json"
                 },
                 "pageLength": 25,
-                "responsive": true
+                "responsive": true,
+                "searching": false // Desativa a busca do DataTables pois o PHP já está filtrando
             });
         });
 
@@ -624,32 +447,19 @@ $imagem_final  = file_exists($imagem_path) ? $imagem_path : $imagem_generica;
             var lng = parseFloat($(this).data('lng'));
             var title = $(this).data('title');
             
-            if (currentMap) {
-                currentMap.remove();
-            }
-            
+            if (currentMap) { currentMap.remove(); }
             $('#leaflet-map-container').removeClass('d-none');
             
             currentMap = L.map('single-leaflet-map').setView([lat, lng], 15);
-            
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap'
-            }).addTo(currentMap);
-            
-            L.marker([lat, lng]).addTo(currentMap)
-                .bindPopup(title)
-                .openPopup();
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(currentMap);
+            L.marker([lat, lng]).addTo(currentMap).bindPopup(title).openPopup();
         });
 
         $('#close-map-btn').click(function() {
-            if (currentMap) {
-                currentMap.remove();
-                currentMap = null;
-            }
+            if (currentMap) { currentMap.remove(); currentMap = null; }
             $('#leaflet-map-container').addClass('d-none');
         });
 
-        // Função para modal de imagem
         function openImageModal(img) {
             var modal = $('<div class="modal fade" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">' + img.alt + '</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body text-center"><img src="' + img.src + '" class="img-fluid"></div></div></div></div>');
             $('body').append(modal);
@@ -659,4 +469,3 @@ $imagem_final  = file_exists($imagem_path) ? $imagem_path : $imagem_generica;
     </script>
 </body>
 </html>
-<!--  -->

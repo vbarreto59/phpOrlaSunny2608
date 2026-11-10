@@ -13,21 +13,67 @@ elseif (isset($pdo) && $pdo instanceof PDO)    $db = $pdo;
 elseif (isset($db) && $db instanceof PDO)      { /* ok */ }
 else die("Erro: conexão com o banco não encontrada.");
 
-// --- Tema seguro (defaults se faltar chave) ---
+// --- Tema seguro ---
 $themeDefaults = [
-    'primary'       => '#800020',
-    'primary_dark'  => '#4B0C1D',
-    'secondary'     => '#6c757d',
-    'accent'        => '#ffc107',
-    'bg_body'       => '#f0f2f5',
-    'text_color'    => '#1a1a2e',
-    'card_bg'       => '#ffffff',
-    'shadow_color'  => '#1a1a2e',
-    'btn_bg'        => '#800020',
-    'btn_hover'     => '#4B0C1D',
+    'primary'       => '#800020', 'primary_dark'  => '#4B0C1D',
+    'secondary'     => '#6c757d', 'accent'        => '#ffc107',
+    'bg_body'       => '#f0f2f5', 'text_color'    => '#1a1a2e',
+    'card_bg'       => '#ffffff', 'shadow_color'  => '#1a1a2e',
+    'btn_bg'        => '#800020', 'btn_hover'     => '#4B0C1D',
     'btn_text'      => '#ffffff',
 ];
 $themeSafe = array_merge($themeDefaults, isset($theme) && is_array($theme) ? $theme : []);
+
+// ============================================================
+// HANDLER AJAX PARA EXCLUSÃO (Apenas BARRETO e SEM VENDAS)
+// ============================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    header('Content-Type: application/json; charset=utf-8');
+    
+    // Valida permissão
+    $usuarioLogado = strtoupper($_SESSION['Usuario'] ?? '');
+    if ($usuarioLogado !== 'BARRETO') {
+        echo json_encode(['success' => false, 'message' => 'Acesso negado. Apenas BARRETO pode excluir.']);
+        exit;
+    }
+
+    $delId = (int)($_POST['id'] ?? 0);
+    if ($delId <= 0) {
+        echo json_encode(['success' => false, 'message' => 'ID inválido.']);
+        exit;
+    }
+
+    try {
+        // ✅ NOVO: Verifica se existem vendas antes de excluir (Proteção Backend)
+        $stmtVendas = $db->prepare("SELECT COUNT(*) FROM vendas WHERE Empreend_ID = ?");
+        $stmtVendas->execute([$delId]);
+        $totalVendas = (int)$stmtVendas->fetchColumn();
+
+        if ($totalVendas > 0) {
+            echo json_encode(['success' => false, 'message' => "Não é possível excluir: existem $totalVendas unidade(s) vendida(s) vinculada(s) a este empreendimento."]);
+            exit;
+        }
+
+        // Tenta apagar a imagem do card (se existir)
+        $imgPath = __DIR__ . '/card/' . $delId . '.jpg';
+        if (file_exists($imgPath)) {
+            @unlink($imgPath);
+        }
+
+        // Exclui do banco de dados
+        $stmt = $db->prepare("DELETE FROM empreendimento WHERE Empreend_ID = ?");
+        $stmt->execute([$delId]);
+
+        echo json_encode(['success' => true, 'message' => 'Empreendimento excluído com sucesso.']);
+    } catch (PDOException $e) {
+        $msg = $e->getMessage();
+        if (strpos($msg, 'foreign key') !== false || strpos($msg, 'constraint') !== false) {
+            $msg = 'Não é possível excluir. Existem registros vinculados (ex: fluxos, premiações).';
+        }
+        echo json_encode(['success' => false, 'message' => $msg]);
+    }
+    exit;
+}
 
 // --- Estatísticas do header ---
 $total = 0; $comLoc = 0; $comMap = 0;
@@ -36,6 +82,9 @@ try {
     $comLoc = (int) $db->query("SELECT COUNT(*) FROM empreendimento WHERE Localizacao IS NOT NULL AND Localizacao <> ''")->fetchColumn();
     $comMap = (int) $db->query("SELECT COUNT(*) FROM empreendimento WHERE LinkMapa IS NOT NULL AND LinkMapa <> ''")->fetchColumn();
 } catch (PDOException $e) { /* opcional */ }
+
+// Flag para o botão de exclusão
+$isBarreto = (strtoupper($_SESSION['Usuario'] ?? '') === 'BARRETO');
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -452,6 +501,22 @@ try {
         .input-edit.input-localizacao { text-transform: uppercase; }
         .input-edit.input-linkmapa { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.82rem; }
 
+        /* Badge de Vendas */
+        .badge-vendas {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 800;
+            font-size: 0.75rem;
+            border: 2px solid var(--shadow-color);
+            box-shadow: 2px 2px 0 0 var(--shadow-color);
+            white-space: nowrap;
+        }
+        .badge-vendas.com-vendas { background: var(--success); color: #fff; }
+        .badge-vendas.sem-vendas { background: rgba(0,0,0,0.05); color: var(--text-color); opacity: 0.6; box-shadow: none; border-color: transparent; }
+
         /* Ações */
         .action-buttons { white-space: nowrap; }
         .btn-neo {
@@ -470,6 +535,8 @@ try {
         }
         .btn-neo-primary { background: var(--btn-bg); color: var(--btn-text); }
         .btn-neo-info    { background: var(--info); color: #fff; }
+        .btn-neo-danger  { background: var(--danger); color: #fff; }
+        .btn-neo-danger:hover:not(:disabled) { background: #bd2130; }
         .btn-neo:hover:not(:disabled) {
             transform: translate(-2px, -2px);
             box-shadow: 5px 5px 0 0 var(--shadow-color);
@@ -662,18 +729,20 @@ try {
                     <th style="width: 70px;">ID</th>
                     <th style="width: 140px;">Empresa</th>
                     <th style="width: 22%;">Empreendimento</th>
+                    <th style="width: 90px;">Vendas</th> <!-- NOVA COLUNA -->
                     <th>Localização</th>
                     <th>Link do Mapa</th>
-                    <th style="width: 210px;">Ações</th>
+                    <th style="width: 260px;">Ações</th>
                 </tr>
             </thead>
             <tbody>
             <?php
             try {
-                // ✅ CORREÇÃO: JOIN com empresa
+                // ✅ NOVO: Subquery para contar vendas
                 $sql = "SELECT e.Empreend_ID, e.NomeEmpreendimento, e.Empresa_Id,
                                e.Localidade, e.Localizacao, e.LinkMapa,
-                               COALESCE(emp.NomeEmpresa, '—') AS NomeEmpresa
+                               COALESCE(emp.NomeEmpresa, '—') AS NomeEmpresa,
+                               (SELECT COUNT(*) FROM vendas WHERE Empreend_ID = e.Empreend_ID) AS TotalVendas
                         FROM empreendimento e
                         LEFT JOIN empresa emp ON e.Empresa_Id = emp.Empresa_Id
                         ORDER BY e.NomeEmpreendimento";
@@ -689,6 +758,7 @@ try {
                     $localidade  = $emp['Localidade']   ?? '';
                     $localizacao = $emp['Localizacao']  ?? '';
                     $linkmapa    = $emp['LinkMapa']     ?? '';
+                    $totalVendas = (int)$emp['TotalVendas'];
 
                     $noLoc = ($localizacao === '');
                     $noMap = ($linkmapa === '');
@@ -705,6 +775,16 @@ try {
                         <span class="cell-nome"><?php echo htmlspecialchars($nome); ?></span>
                         <?php if ($localidade !== ''): ?>
                             <span class="cell-localidade">📍 <?php echo htmlspecialchars($localidade); ?></span>
+                        <?php endif; ?>
+                    </td>
+                    <!-- NOVO: Célula de Vendas -->
+                    <td>
+                        <?php if ($totalVendas > 0): ?>
+                            <span class="badge-vendas com-vendas" title="<?= $totalVendas ?> unidade(s) vendida(s)">
+                                <i class="fas fa-shopping-cart mr-1"></i> <?= $totalVendas ?>
+                            </span>
+                        <?php else: ?>
+                            <span class="badge-vendas sem-vendas">0</span>
                         <?php endif; ?>
                     </td>
                     <td>
@@ -737,16 +817,25 @@ try {
                                 title="Abrir no Google Maps ou no link salvo">
                             <i class="fas fa-map-marked-alt"></i> Mapa
                         </button>
+                        
+                        <!-- ✅ NOVO: Lixeira só aparece se for BARRETO e NÃO houver vendas -->
+                        <?php if ($isBarreto && $totalVendas === 0): ?>
+                        <button class="btn-neo btn-neo-danger btn-delete"
+                                data-id="<?php echo htmlspecialchars($id); ?>"
+                                title="Excluir Empreendimento">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                        <?php endif; ?>
                     </td>
                 </tr>
             <?php
                 endforeach;
 
                 if (empty($empreendimentos)) {
-                    echo "<tr><td colspan='6' style='text-align:center; font-weight:700; opacity:0.6;'>Nenhum empreendimento encontrado</td></tr>";
+                    echo "<tr><td colspan='7' style='text-align:center; font-weight:700; opacity:0.6;'>Nenhum empreendimento encontrado</td></tr>";
                 }
             } catch (PDOException $e) {
-                echo "<tr><td colspan='6' style='color: var(--danger); font-weight: 700;'>";
+                echo "<tr><td colspan='7' style='color: var(--danger); font-weight: 700;'>";
                 echo "Erro ao carregar dados: " . htmlspecialchars($e->getMessage());
                 echo "</td></tr>";
             }
@@ -808,7 +897,7 @@ try {
             "lengthMenu": [[25, 50, 100, 200, -1], [25, 50, 100, 200, "Todos"]],
             "order": [],
             "columnDefs": [
-                { "orderable": false, "targets": [3, 4, 5] }
+                { "orderable": false, "targets": [4, 5, 6] } // Atualizado os índices
             ],
             "dom": 'Blrtip',
             "buttons": [
@@ -1099,7 +1188,51 @@ try {
         }
 
         // ============================================================
-        // 7) Fechar com confirmação
+        // 7) Excluir Empreendimento (Apenas BARRETO e SEM VENDAS)
+        // ============================================================
+        $(document).on('click', '.btn-delete', function() {
+            var id = $(this).data('id');
+            var nome = $('#linha_' + id).find('.cell-nome').text().trim();
+            var $btn = $(this);
+            var originalHtml = $btn.html();
+
+            Swal.fire({
+                title: 'Excluir Empreendimento?',
+                html: `Você tem certeza que deseja excluir <b>${nome}</b>?<br><br><small style="color:#dc3545; font-weight:700;">⚠️ Esta ação não pode ser desfeita e removerá também a imagem do card.</small>`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sim, excluir',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6b7280'
+            }).then(function(r) {
+                if (r.isConfirmed) {
+                    $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+                    
+                    $.ajax({
+                        url: window.location.href,
+                        type: 'POST',
+                        data: { action: 'delete', id: id },
+                        dataType: 'json'
+                    }).done(function(res) {
+                        if (res.success) {
+                            Toast.fire({ icon: 'success', title: res.message });
+                            // Remove a linha do DataTables em tempo real
+                            table.row($('#linha_' + id)).remove().draw(false);
+                        } else {
+                            Swal.fire('Erro', res.message, 'error');
+                            $btn.prop('disabled', false).html(originalHtml);
+                        }
+                    }).fail(function() {
+                        Swal.fire('Erro', 'Falha na comunicação com o servidor.', 'error');
+                        $btn.prop('disabled', false).html(originalHtml);
+                    });
+                }
+            });
+        });
+
+        // ============================================================
+        // 8) Fechar com confirmação
         // ============================================================
         window.addEventListener('beforeunload', beforeUnloadHandler);
 
