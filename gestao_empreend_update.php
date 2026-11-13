@@ -50,12 +50,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btnAtualizar'])) {
         $nome = strtoupper(trim($_POST['Nome'] ?? 'X'));
         $descricao = strtoupper(trim($_POST['Descricao'] ?? 'X'));
         
+        // Removidos os campos de links e DataTabela
         $sql = "UPDATE empreendimento SET 
                 Empresa_Id = :emp_id, NomeEmpreendimento = :nome, Descricao = :desc,
-                LinkMapa = :mapa, LinkFicha = :ficha, LinkSite = :site,
-                LinkVideo = :video, LinkTocca = :tocca, LinkConstrutora = :const,
-                LinkTabela = :tab, RespCadastro = :resp, Carteira = :cart,
-                Vendido = :vend, PercentualVendido = :perc, EtapaObra = :etapa, DataTabela = :dt
+                RespCadastro = :resp, Carteira = :cart, Vendido = :vend, 
+                PercentualVendido = :perc, EtapaObra = :etapa
                 WHERE Empreend_ID = :id";
         
         $stmt = $conn->prepare($sql);
@@ -63,19 +62,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btnAtualizar'])) {
             ':emp_id' => $empresaID, 
             ':nome'   => $nome, 
             ':desc'   => $descricao,
-            ':mapa'   => substr(trim($_POST['LinkMapa'] ?? ''), 0, 255),
-            ':ficha'  => substr(trim($_POST['LinkFicha'] ?? ''), 0, 255),
-            ':site'   => substr(trim($_POST['LinkSite'] ?? ''), 0, 255),
-            ':video'  => substr(trim($_POST['LinkVideo'] ?? ''), 0, 255),
-            ':tocca'  => substr(trim($_POST['LinkTocca'] ?? ''), 0, 255),
-            ':const'  => substr(trim($_POST['LinkConstrutora'] ?? ''), 0, 255),
-            ':tab'    => substr(trim($_POST['LinkTabela'] ?? ''), 0, 255),
             ':resp'   => $_POST['RespCadastro'] ?? '',
             ':cart'   => getCheckboxValue($_POST['Carteira'] ?? 0),
             ':vend'   => getCheckboxValue($_POST['Vendido'] ?? 0),
             ':perc'   => $_POST['PercentualVendido'] ?? 0,
             ':etapa'  => $_POST['EtapaObra'] ?? 'Ausente',
-            ':dt'     => $_POST['DataTabela'] ?? date('Y-m-d'),
             ':id'     => $idEmpreend
         ]);
 
@@ -376,69 +367,6 @@ try {
         textarea.form-control { resize: vertical; min-height: 80px; }
 
         /* ============================================================ */
-        /* LINK GROUP (input + botão abrir)                             */
-        /* ============================================================ */
-        .link-group {
-            display: flex;
-            align-items: stretch;
-            border: 1.5px solid var(--shadow-color);
-            border-radius: 10px;
-            background: #fff;
-            transition: all 0.15s;
-            overflow: hidden;
-        }
-        .link-group:focus-within {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px var(--primary-soft), 3px 3px 0 0 var(--shadow-color);
-        }
-        .link-group .link-icon {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 42px;
-            background: var(--surface-soft);
-            color: var(--primary);
-            flex-shrink: 0;
-            border-right: 1px solid var(--border-soft);
-            font-size: 0.92rem;
-        }
-        .link-group input {
-            flex: 1;
-            border: none;
-            padding: 10px 12px;
-            font-size: 0.9rem;
-            font-weight: 500;
-            color: var(--text-color);
-            outline: none;
-            background: transparent;
-            min-width: 0;
-        }
-        .link-group input::placeholder { color: #b8bcc4; font-weight: 400; }
-        .link-group .btn-test {
-            border: none;
-            background: var(--surface-soft);
-            color: var(--text-color);
-            border-left: 1px solid var(--border-soft);
-            padding: 0 14px;
-            cursor: pointer;
-            transition: all 0.15s;
-            font-size: 0.85rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-decoration: none;
-        }
-        .link-group .btn-test:hover:not(.disabled) {
-            background: var(--primary);
-            color: #fff;
-        }
-        .link-group .btn-test.disabled {
-            opacity: 0.35;
-            pointer-events: none;
-            cursor: not-allowed;
-        }
-
-        /* ============================================================ */
         /* SWITCH CARDS (carteira / vendido)                            */
         /* ============================================================ */
         .switch-card {
@@ -707,7 +635,7 @@ try {
     <div class="page-header-inner">
         <div class="page-header-left">
 
-            <!-- 🖼️ Logo do tema (usa o mesmo padrão da mainpage) -->
+            <!-- 🖼️ Logo do tema -->
             <img src="<?php echo (!empty($_SESSION['Conf_ImgLogo'])) ? $_SESSION['Conf_ImgLogo'] : 'logoSunny66a.JPG'; ?>"
                  alt="Logo Empresa"
                  class="page-header-logo">
@@ -787,72 +715,10 @@ try {
             </div>
         </section>
 
-        <!-- ================= 2. LINKS E DOCUMENTOS ================= -->
+        <!-- ================= 2. DISPONIBILIDADE ================= -->
         <section class="form-card">
             <div class="form-card-header">
                 <div class="form-card-number">2</div>
-                <div class="form-card-title">
-                    <h2>Links e Documentos</h2>
-                    <p>URLs com até 255 caracteres · Clique no ícone <i class="fas fa-external-link-alt"></i> para abrir</p>
-                </div>
-            </div>
-            <div class="form-card-body">
-                <div class="row g-3">
-                    <?php
-                    $camposLink = [
-                        ['LinkMapa',        'Link Mapa',        'fa-map-marker-alt', 'LinkMapa'],
-                        ['LinkFicha',       'Link Ficha',       'fa-file-pdf',       'LinkFicha'],
-                        ['LinkSite',        'Link Site',        'fa-globe',          'LinkSite'],
-                        ['LinkVideo',       'Link Vídeo',       'fa-video',          'LinkVideo'],
-                        ['LinkTocca',       'Tocca Drive',      'fa-folder',         'LinkTocca'],
-                        ['LinkConstrutora', 'Construtora Drive','fa-hard-hat',       'LinkConstrutora'],
-                        ['LinkTabela',      'Link Tabela',      'fa-table',          'LinkTabela'],
-                    ];
-                    foreach ($camposLink as $campo):
-                        $name  = $campo[0];
-                        $label = $campo[1];
-                        $icon  = $campo[2];
-                        $value = htmlspecialchars($empreendimento[$name] ?? '');
-                    ?>
-                    <div class="col-md-6">
-                        <label class="field-label" for="<?= $name ?>">
-                            <i class="fas <?= $icon ?>"></i>
-                            <?= $label ?>
-                        </label>
-                        <div class="link-group">
-                            <span class="link-icon"><i class="fas <?= $icon ?>"></i></span>
-                            <input type="text" id="<?= $name ?>" name="<?= $name ?>"
-                                   value="<?= $value ?>"
-                                   placeholder="https://…">
-                            <a class="btn-test <?= $value ? '' : 'disabled' ?>"
-                               id="test_<?= $name ?>"
-                               href="<?= $value ?: '#' ?>"
-                               target="_blank"
-                               rel="noopener"
-                               title="Abrir link">
-                                <i class="fas fa-external-link-alt"></i>
-                            </a>
-                        </div>
-                    </div>
-                    <?php endforeach; ?>
-
-                    <!-- Data da Tabela -->
-                    <div class="col-md-6">
-                        <label class="field-label" for="DataTabela">
-                            <i class="fas fa-calendar-alt"></i>
-                            Data da Tabela
-                        </label>
-                        <input type="date" class="form-control" id="DataTabela" name="DataTabela"
-                               value="<?= $empreendimento['DataTabela'] ?>">
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- ================= 3. DISPONIBILIDADE ================= -->
-        <section class="form-card">
-            <div class="form-card-header">
-                <div class="form-card-number">3</div>
                 <div class="form-card-title">
                     <h2>Disponibilidade</h2>
                     <p>Status de vendas e etapa da obra</p>
@@ -935,10 +801,10 @@ try {
             </div>
         </section>
 
-        <!-- ================= 4. RESPONSÁVEL ================= -->
+        <!-- ================= 3. RESPONSÁVEL ================= -->
         <section class="form-card">
             <div class="form-card-header">
-                <div class="form-card-number">4</div>
+                <div class="form-card-number">3</div>
                 <div class="form-card-title">
                     <h2>Responsável</h2>
                     <p>Quem cadastrou / mantém este registro</p>
@@ -1006,26 +872,7 @@ $(function() {
     });
 
     // ============================================================
-    // 2) Botões "abrir link" refletem o valor do input
-    // ============================================================
-    $('.link-group').each(function() {
-        var $input = $(this).find('input');
-        var $btn = $(this).find('.btn-test');
-
-        function syncBtn() {
-            var v = $.trim($input.val());
-            if (v) {
-                $btn.attr('href', v).removeClass('disabled');
-            } else {
-                $btn.attr('href', '#').addClass('disabled');
-            }
-        }
-        $input.on('input', syncBtn);
-        syncBtn();
-    });
-
-    // ============================================================
-    // 3) Detecta alterações e avisa ao sair
+    // 2) Detecta alterações e avisa ao sair
     // ============================================================
     var formOriginal = $('#formEmpreend').serialize();
     var permitirSair = false;
@@ -1082,18 +929,6 @@ if (typeof jQuery === 'undefined') {
                 range.value = v;
             });
         }
-        document.querySelectorAll('.link-group').forEach(function(group) {
-            var input = group.querySelector('input');
-            var btn = group.querySelector('.btn-test');
-            if (!input || !btn) return;
-            function sync() {
-                var v = (input.value || '').trim();
-                if (v) { btn.setAttribute('href', v); btn.classList.remove('disabled'); }
-                else { btn.setAttribute('href', '#'); btn.classList.add('disabled'); }
-            }
-            input.addEventListener('input', sync);
-            sync();
-        });
     });
     window.tentarFechar = function() { window.close(); };
 }

@@ -1,4 +1,5 @@
 <?php
+// usr_edit.php
 // ============================================================
 // session_start PRIMEIRO
 // ============================================================
@@ -54,7 +55,7 @@ function getPermissaoInfo($codigo) {
 // ============================================================
 // VALIDA ID
 // ============================================================
-$vUserId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?? 0;
+$vUserId = (int)(filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0);
 
 if ($vUserId <= 0) {
     $_SESSION['MsgErro'] = "ID de usuário inválido.";
@@ -90,10 +91,17 @@ try {
 // form_data (prioriza POST em caso de erro) + normalização de chaves
 $form_data = $_SESSION['form_data'] ?? $userData;
 unset($_SESSION['form_data']);
-// normaliza ID do grupo (POST envia ID_Grupo; SELECT retorna GrupoId)
 if (isset($form_data['ID_Grupo']) && !isset($form_data['GrupoId'])) {
     $form_data['GrupoId'] = (int)$form_data['ID_Grupo'];
 }
+
+// ============================================================
+// ESTADO INICIAL DA FOTO
+// ============================================================
+$fotoPath      = __DIR__ . '/fotos/' . $vUserId . '.jpg';
+$temFoto       = file_exists($fotoPath);
+$fotoTimestamp = $temFoto ? filemtime($fotoPath) : 0;
+$fotoUrl       = $temFoto ? 'fotos/' . $vUserId . '.jpg?t=' . $fotoTimestamp : '';
 
 // ============================================================
 // PROCESSAMENTO DO POST
@@ -101,7 +109,11 @@ if (isset($form_data['ID_Grupo']) && !isset($form_data['GrupoId'])) {
 $erros = [];
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+
+    $csrfOk = isset($_POST['csrf_token'])
+           && hash_equals($_SESSION['csrf_token'], $_POST['csrf_token']);
+
+    if (!$csrfOk) {
         $erros[] = "Falha na verificação de segurança (CSRF). Recarregue a página.";
     } else {
         $vUsuario   = trim($_POST['Usuario']   ?? '');
@@ -117,7 +129,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $vFuncao    = trim($_POST['Funcao']    ?? '');
         $vAcoes     = trim($_POST['Acoes']     ?? '');
 
-        // Validações
+        // Validações básicas
         if (empty($vUsuario) || empty($vNome) || $vPermissao < 1 || $vPermissao > 7 ||
             $vIdEmp <= 0 || $vID_Grupo <= 0) {
             $erros[] = "Campos obrigatórios não preenchidos corretamente.";
@@ -125,7 +137,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         $senhaSalvar = !empty($vSenha) ? $vSenha : $userData['SenhaAtual'];
 
-        // Duplicidade
+        // Duplicidade de usuário
         if (empty($erros) && $vUsuario !== $userData['Usuario']) {
             $chk = $db->prepare("SELECT 1 FROM usuarios WHERE Usuario = ? AND UserId != ?");
             $chk->execute([$vUsuario, $vUserId]);
@@ -163,6 +175,30 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $vAcoes  = $permInfo['acoes'];
         }
 
+        // -------- VALIDAÇÃO DA FOTO (antes da transação) --------
+        $fotoFile    = $_FILES['Foto'] ?? null;
+        $removerFoto = isset($_POST['RemoverFoto']) && $_POST['RemoverFoto'] === '1';
+        $fotoValida  = false;
+        $fotoInfo    = null;
+
+        if ($fotoFile && $fotoFile['error'] !== UPLOAD_ERR_NO_FILE) {
+            if ($fotoFile['error'] !== UPLOAD_ERR_OK) {
+                $erros[] = "Falha no upload da imagem (código " . (int)$fotoFile['error'] . ").";
+            } elseif ($fotoFile['size'] > 5 * 1024 * 1024) {
+                $erros[] = "A imagem excede o limite de 5 MB.";
+            } else {
+                $fotoInfo = @getimagesize($fotoFile['tmp_name']);
+                if (!$fotoInfo) {
+                    $erros[] = "O arquivo enviado não é uma imagem válida.";
+                } elseif (!in_array($fotoInfo[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP], true)) {
+                    $erros[] = "Formato de imagem não suportado. Use JPG, PNG ou WEBP.";
+                } else {
+                    $fotoValida = true;
+                }
+            }
+        }
+
+        // -------- UPDATE + GRUPO --------
         if (empty($erros)) {
             try {
                 $db->beginTransaction();
@@ -174,7 +210,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         IdEmp = ?, Empresa = ?, GrupoId = ?, Grupo = ?, Opr = ?
                     WHERE UserId = ?
                 ";
-
                 $stmt = $db->prepare($sql);
                 $stmt->execute([
                     $vUsuario, $senhaSalvar, $vNome, $vCRECI, $vEmail, $vTelefones,
@@ -189,27 +224,84 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 $db->commit();
 
+                // -------- FOTO (não-crítica: após commit) --------
+                $fotoErro = null;
+                try {
+                    $destDir   = __DIR__ . '/fotos';
+                    $finalPath = $destDir . '/' . $vUserId . '.jpg';
+
+                    if ($fotoValida && $fotoFile) {
+                        if (!is_dir($destDir) && !@mkdir($destDir, 0775, true) && !is_dir($destDir)) {
+                            throw new Exception("Não foi possível criar a pasta fotos/.");
+                        }
+                        $tmpPath = $finalPath . '.tmp.' . uniqid();
+
+                        $img = null;
+                        switch ($fotoInfo[2]) {
+                            case IMAGETYPE_JPEG: $img = @imagecreatefromjpeg($fotoFile['tmp_name']); break;
+                            case IMAGETYPE_PNG:  $img = @imagecreatefrompng($fotoFile['tmp_name']);  break;
+                            case IMAGETYPE_WEBP: $img = @imagecreatefromwebp($fotoFile['tmp_name']); break;
+                        }
+
+                        if ($img) {
+                            $w = imagesx($img); $h = imagesy($img);
+                            $max = 500;
+                            if ($w > $max || $h > $max) {
+                                $ratio = min($max / $w, $max / $h);
+                                $nw = max(1, (int)round($w * $ratio));
+                                $nh = max(1, (int)round($h * $ratio));
+                                $resized = imagecreatetruecolor($nw, $nh);
+                                imagefill($resized, 0, 0, imagecolorallocate($resized, 255, 255, 255));
+                                imagecopyresampled($resized, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
+                                imagedestroy($img);
+                                $img = $resized;
+                            }
+                            $ok = imagejpeg($img, $tmpPath, 88);
+                            imagedestroy($img);
+                            if (!$ok) { @unlink($tmpPath); throw new Exception("Falha ao processar imagem."); }
+                        } else {
+                            if (!@copy($fotoFile['tmp_name'], $tmpPath)) {
+                                throw new Exception("Falha ao salvar a imagem temporária.");
+                            }
+                        }
+
+                        if (!@rename($tmpPath, $finalPath)) {
+                            @unlink($tmpPath);
+                            throw new Exception("Falha ao mover a imagem para o destino final.");
+                        }
+                    } elseif ($removerFoto && file_exists($finalPath)) {
+                        @unlink($finalPath);
+                    }
+                } catch (Exception $e) {
+                    $fotoErro = $e->getMessage();
+                    error_log('[USR_EDIT_FOTO] ' . $fotoErro);
+                }
+
                 $_SESSION['MsgSucesso'] = "Usuário <strong>" . htmlspecialchars($vNome) . "</strong> atualizado com sucesso!";
+                if ($fotoErro) {
+                    $_SESSION['MsgSucesso'] .= " <small>(aviso: foto não atualizada: " . htmlspecialchars($fotoErro) . ")</small>";
+                }
                 header("Location: usr_listar.php");
                 exit;
 
             } catch (Exception $e) {
-                $db->rollBack();
+                if ($db->inTransaction()) $db->rollBack();
                 $erros[] = "Erro ao atualizar: " . $e->getMessage();
             }
         }
+    }
 
-        if (!empty($erros)) {
-            $_SESSION['MsgErro'] = implode("<br>", $erros);
-            $_SESSION['form_data'] = $_POST;
-            header("Location: usr_editar.php?id={$vUserId}");
-            exit();
-        }
+    // -------- REDIRECT EM CASO DE ERRO (CSRF + validações) --------
+    if (!empty($erros)) {
+        $_SESSION['MsgErro'] = implode("<br>", $erros);
+        $_SESSION['form_data'] = $_POST;
+        header("Location: " . basename(__FILE__) . "?id={$vUserId}");
+        exit();
     }
 }
 
 // ============================================================
-// CARREGAR EMPRESAS E GRUPOS (para os selects)
+// CARREGAR EMPRESAS E GRUPOS
 // ============================================================
 $listaEmpresas = [];
 $listaGrupos   = [];
@@ -271,9 +363,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
 
         .container-neo { max-width: 960px; margin: 0 auto; padding: 0 20px; }
 
-        /* ============================================================ */
-        /* HEADER                                                       */
-        /* ============================================================ */
+        /* HEADER */
         .page-header {
             background: var(--primary);
             color: #fff;
@@ -334,7 +424,6 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
             padding: 1px 8px;
             border-radius: 6px;
         }
-
         .header-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
         .meta-chip {
             background: rgba(0,0,0,0.2);
@@ -348,9 +437,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
             gap: 5px;
         }
 
-        /* ============================================================ */
-        /* CARDS                                                        */
-        /* ============================================================ */
+        /* CARDS */
         .card-neo {
             background: var(--card-bg);
             border: 3px solid var(--shadow-color);
@@ -377,9 +464,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
         }
         .card-neo-body { padding: 22px; }
 
-        /* ============================================================ */
-        /* FORM                                                         */
-        /* ============================================================ */
+        /* FORM */
         .field-label {
             display: flex;
             align-items: center;
@@ -415,7 +500,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
         .form-control[readonly] { background: #f8f9fb; cursor: not-allowed; }
         .form-control.font-monospace { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.78rem; }
 
-        /* Input group com prefixo */
+        /* INPUT GROUP */
         .input-group-neo { display: flex; align-items: stretch; }
         .input-group-neo .prefix {
             background: rgba(0,0,0,0.05);
@@ -428,22 +513,75 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
             font-size: 0.9rem;
             flex-shrink: 0;
         }
-        .input-group-neo .form-control { border-radius: 0 10px 10px 0; }
-        .input-group-neo .btn-toggle-pwd {
+        .input-group-neo .form-control { border-radius: 0; }
+        .input-group-neo .form-control:first-of-type { border-radius: 0; }
+        .input-group-neo .btn-toggle-pwd,
+        .input-group-neo .btn-magic {
             border: 2px solid var(--shadow-color);
             border-left: none;
-            border-radius: 0 10px 10px 0;
             background: rgba(0,0,0,0.05);
             color: var(--text-color);
             padding: 0 14px;
             cursor: pointer;
             transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0;
         }
-        .input-group-neo .btn-toggle-pwd:hover { background: var(--primary); color: #fff; }
+        .input-group-neo .btn-magic:hover,
+        .input-group-neo .btn-toggle-pwd:hover {
+            background: var(--primary); color: #fff;
+        }
+        .input-group-neo > :last-child { border-radius: 0 10px 10px 0 !important; }
 
-        /* ============================================================ */
-        /* GRUPO / PERMISSÃO — CARDS                                    */
-        /* ============================================================ */
+        /* FOTO UPLOAD */
+        .foto-upload-wrap {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            padding: 14px;
+            background: rgba(0,0,0,0.02);
+            border: 2px solid var(--shadow-color);
+            border-radius: 12px;
+        }
+        .foto-preview {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            border: 3px solid var(--shadow-color);
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        .foto-preview img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+        }
+        .foto-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1;
+            min-width: 0;
+            justify-content: center;
+        }
+        .foto-helper {
+            font-size: 0.72rem;
+            opacity: 0.7;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* OPTION CARDS */
         .option-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -498,7 +636,6 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
             width: 5px;
             border-radius: 12px 0 0 12px;
         }
-
         .option-card.is-checked {
             background: var(--primary);
             border-color: var(--primary-dark);
@@ -507,13 +644,10 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
         .option-card.is-checked .opt-title,
         .option-card.is-checked .opt-title i,
         .option-card.is-checked .opt-desc,
-        .option-card.is-checked .opt-id {
-            color: #fff;
-        }
+        .option-card.is-checked .opt-id { color: #fff; }
         .option-card.is-checked .opt-id { background: rgba(255,255,255,0.2); }
         .option-card.is-checked .opt-color-bar { display: none; }
 
-        /* Cores por permissão */
         .perm-danger    .opt-color-bar { background: var(--danger); }
         .perm-warning   .opt-color-bar { background: var(--warning); }
         .perm-info      .opt-color-bar { background: var(--info); }
@@ -522,9 +656,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
         .perm-purple    .opt-color-bar { background: var(--purple); }
         .perm-success   .opt-color-bar { background: var(--success); }
 
-        /* ============================================================ */
-        /* BADGE PERMISSÃO                                              */
-        /* ============================================================ */
+        /* BADGE */
         .perm-badge {
             display: inline-flex;
             align-items: center;
@@ -539,17 +671,8 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
             box-shadow: 2px 2px 0 0 var(--shadow-color);
             color: #fff;
         }
-        .perm-badge.bg-danger    { background: var(--danger); }
-        .perm-badge.bg-warning   { background: var(--warning); color: #000; }
-        .perm-badge.bg-info      { background: var(--info); }
-        .perm-badge.bg-primary   { background: var(--primary); }
-        .perm-badge.bg-secondary { background: #6b7280; }
-        .perm-badge.bg-purple    { background: var(--purple); }
-        .perm-badge.bg-success   { background: var(--success); }
 
-        /* ============================================================ */
-        /* INFO METADATA                                                */
-        /* ============================================================ */
+        /* META */
         .meta-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -577,9 +700,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
             color: var(--text-color);
         }
 
-        /* ============================================================ */
-        /* ACTION BAR                                                   */
-        /* ============================================================ */
+        /* ACTION BAR */
         .action-bar {
             position: fixed;
             bottom: 0; left: 0; right: 0;
@@ -638,10 +759,9 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
         .btn-neo-primary:hover:not(:disabled) { background: var(--btn-hover); color: #fff; }
         .btn-neo-secondary { background: #fff; color: var(--text-color); }
         .btn-neo-secondary:hover { background: #f8f9fb; color: var(--text-color); }
+        .btn-neo-sm { padding: 6px 12px; font-size: 0.76rem; box-shadow: 2px 2px 0 0 var(--shadow-color); }
+        .btn-neo-sm:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 0 var(--shadow-color); }
 
-        /* ============================================================ */
-        /* RESPONSIVO                                                   */
-        /* ============================================================ */
         @media (max-width: 768px) {
             .page-header { padding: 10px 0; }
             .header-inner { padding: 0 12px; }
@@ -662,9 +782,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
 </head>
 <body>
 
-<!-- ============================================================ -->
-<!-- HEADER                                                       -->
-<!-- ============================================================ -->
+<!-- HEADER -->
 <header class="page-header">
     <div class="header-inner">
         <div class="header-brand">
@@ -694,25 +812,21 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
     </div>
 </header>
 
-<!-- ============================================================ -->
-<!-- CONTEÚDO                                                     -->
-<!-- ============================================================ -->
+<!-- CONTEÚDO -->
 <div class="container-neo">
 
-    <!-- Alertas de erro (se redirect em GET trouxe algo) -->
     <?php if (isset($_SESSION['MsgErro'])): ?>
-        <div class="alert-neo alert-danger" style="background:var(--danger);color:#fff;border:3px solid var(--shadow-color);border-radius:14px;padding:14px 18px;margin-bottom:18px;font-weight:700;display:flex;gap:10px;">
+        <div class="alert-neo" style="background:var(--danger);color:#fff;border:3px solid var(--shadow-color);border-radius:14px;padding:14px 18px;margin-bottom:18px;font-weight:700;display:flex;gap:10px;">
             <i class="fas fa-exclamation-circle"></i>
             <div><?= $_SESSION['MsgErro']; unset($_SESSION['MsgErro']); ?></div>
         </div>
     <?php endif; ?>
 
-    <form method="post" id="formEditar" novalidate>
+    <form method="post" id="formEditar" enctype="multipart/form-data" novalidate autocomplete="off">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+        <input type="hidden" name="RemoverFoto" id="RemoverFoto" value="0">
 
-        <!-- ============================================ -->
-        <!-- METADADOS (readonly)                          -->
-        <!-- ============================================ -->
+        <!-- METADADOS -->
         <div class="card-neo">
             <div class="card-neo-header">
                 <i class="fas fa-info-circle"></i>
@@ -745,21 +859,60 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
             </div>
         </div>
 
-        <!-- ============================================ -->
-        <!-- DADOS PESSOAIS                                -->
-        <!-- ============================================ -->
+        <!-- DADOS PESSOAIS -->
         <div class="card-neo">
             <div class="card-neo-header">
                 <i class="fas fa-user"></i>
                 <h2>Dados Pessoais</h2>
             </div>
             <div class="card-neo-body">
+
+                <!-- FOTO -->
+                <div class="row g-3 mb-3">
+                    <div class="col-12">
+                        <label class="field-label">
+                            <i class="fas fa-camera"></i> Foto do Usuário
+                        </label>
+                        <div class="foto-upload-wrap">
+                            <div class="foto-preview" id="fotoPreview">
+                                <?php if ($temFoto): ?>
+                                    <img src="<?= htmlspecialchars($fotoUrl) ?>" alt="">
+                                <?php else: ?>
+                                    <i class="fas fa-camera"></i>
+                                <?php endif; ?>
+                            </div>
+                            <div class="foto-controls">
+                                <input type="file" id="Foto" name="Foto"
+                                       accept="image/jpeg,image/png,image/webp"
+                                       style="display:none">
+                                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                    <button type="button" class="btn-neo btn-neo-secondary btn-neo-sm"
+                                            onclick="document.getElementById('Foto').click()">
+                                        <i class="fas fa-upload"></i> Selecionar
+                                    </button>
+                                    <button type="button" class="btn-neo btn-neo-secondary btn-neo-sm"
+                                            id="btnRemoverFoto"
+                                            style="<?= $temFoto ? '' : 'display:none;' ?>">
+                                        <i class="fas fa-trash"></i> Remover
+                                    </button>
+                                </div>
+                                <div class="foto-helper">
+                                    <i class="fas fa-info-circle"></i>
+                                    JPG, PNG ou WEBP · máx 5&nbsp;MB · salvo como <code>fotos/<?= (int)$vUserId ?>.jpg</code>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- NOME + CRECI -->
                 <div class="row g-3">
                     <div class="col-md-8">
                         <label class="field-label" for="Nome">
                             <i class="fas fa-signature"></i> Nome completo <span class="req">*</span>
                         </label>
                         <input type="text" class="form-control" id="Nome" name="Nome" required
+                               autocomplete="off"
                                value="<?= htmlspecialchars($form_data['Nome'] ?? '') ?>">
                     </div>
                     <div class="col-md-4">
@@ -767,6 +920,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
                             <i class="fas fa-id-badge"></i> CRECI
                         </label>
                         <input type="text" class="form-control" id="CRECI" name="CRECI"
+                               autocomplete="off"
                                value="<?= htmlspecialchars($form_data['CRECI'] ?? '') ?>">
                     </div>
                     <div class="col-md-8">
@@ -774,6 +928,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
                             <i class="fas fa-envelope"></i> E-mail
                         </label>
                         <input type="email" class="form-control" id="Email" name="Email"
+                               autocomplete="off"
                                value="<?= htmlspecialchars($form_data['Email'] ?? '') ?>">
                     </div>
                     <div class="col-md-4">
@@ -781,15 +936,14 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
                             <i class="fas fa-phone"></i> Telefones
                         </label>
                         <input type="text" class="form-control" id="Telefones" name="Telefones"
+                               autocomplete="off"
                                value="<?= htmlspecialchars($form_data['Telefones'] ?? '') ?>">
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- ============================================ -->
-        <!-- ACESSO                                        -->
-        <!-- ============================================ -->
+        <!-- ACESSO -->
         <div class="card-neo">
             <div class="card-neo-header">
                 <i class="fas fa-key"></i>
@@ -797,6 +951,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
             </div>
             <div class="card-neo-body">
                 <div class="row g-3">
+
                     <div class="col-md-6">
                         <label class="field-label" for="Usuario">
                             <i class="fas fa-at"></i> Usuário <span class="req">*</span>
@@ -804,9 +959,15 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
                         <div class="input-group-neo">
                             <span class="prefix"><i class="fas fa-at"></i></span>
                             <input type="text" class="form-control" id="Usuario" name="Usuario" required
+                                   autocomplete="off"
                                    value="<?= htmlspecialchars($form_data['Usuario'] ?? '') ?>">
+                            <button type="button" class="btn-magic" id="btnGerarUsuario"
+                                    title="Gerar usuário a partir do nome">
+                                <i class="fas fa-wand-magic-sparkles"></i>
+                            </button>
                         </div>
                     </div>
+
                     <div class="col-md-6">
                         <label class="field-label" for="Senha">
                             <i class="fas fa-lock"></i> Nova senha (opcional)
@@ -814,7 +975,12 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
                         <div class="input-group-neo">
                             <span class="prefix"><i class="fas fa-lock"></i></span>
                             <input type="password" class="form-control" id="Senha" name="Senha"
-                                   placeholder="Deixe em branco para manter a atual">
+                                   placeholder="Deixe em branco para manter a atual"
+                                   autocomplete="new-password">
+                            <button type="button" class="btn-magic" id="btnGerarSenha"
+                                    title="Gerar senha a partir do nome">
+                                <i class="fas fa-wand-magic-sparkles"></i>
+                            </button>
                             <button type="button" class="btn-toggle-pwd" id="toggleSenha" title="Mostrar/ocultar senha">
                                 <i class="fas fa-eye"></i>
                             </button>
@@ -859,9 +1025,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
             </div>
         </div>
 
-        <!-- ============================================ -->
-        <!-- GRUPO                                         -->
-        <!-- ============================================ -->
+        <!-- GRUPO -->
         <div class="card-neo">
             <div class="card-neo-header">
                 <i class="fas fa-users"></i>
@@ -897,9 +1061,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
             </div>
         </div>
 
-        <!-- ============================================ -->
-        <!-- PERMISSÃO                                     -->
-        <!-- ============================================ -->
+        <!-- PERMISSÃO -->
         <div class="card-neo">
             <div class="card-neo-header">
                 <i class="fas fa-user-shield"></i>
@@ -960,9 +1122,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
     </form>
 </div>
 
-<!-- ============================================================ -->
-<!-- ACTION BAR                                                   -->
-<!-- ============================================================ -->
+<!-- ACTION BAR -->
 <div class="action-bar">
     <div class="action-bar-inner">
         <div class="action-info">
@@ -981,15 +1141,15 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
     </div>
 </div>
 
-<!-- ============================================================ -->
-<!-- SCRIPTS                                                      -->
-<!-- ============================================================ -->
+<!-- SCRIPTS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 (function () {
     'use strict';
 
     const THEME_PRIMARY = '<?= $themeSafe['primary'] ?>';
+    const HAS_FOTO_INICIAL = <?= $temFoto ? 'true' : 'false' ?>;
+    const USER_ID = <?= (int)$vUserId ?>;
 
     const Toast = Swal.mixin({
         toast: true,
@@ -997,6 +1157,168 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
         showConfirmButton: false,
         timer: 3500,
         timerProgressBar: true
+    });
+
+    // ============================================================
+    // GERAÇÃO DE CREDENCIAIS
+    // ============================================================
+    function removerAcentos(texto) {
+        return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    }
+
+    function gerarNomeUsuario(nomeCompleto) {
+        if (!nomeCompleto || !nomeCompleto.trim()) return '';
+        const partes = nomeCompleto.toLowerCase().trim().split(/\s+/).filter(Boolean);
+        if (partes.length === 0) return '';
+
+        const particulas = ['da', 'de', 'do', 'das', 'dos', 'e'];
+        const primeiro = removerAcentos(partes[0]);
+        const sobrenomes = partes.slice(1).filter(p => !particulas.includes(p) && p.length > 0);
+
+        if (sobrenomes.length === 0) return primeiro;
+
+        let iniciais = '';
+        for (let i = 0; i < Math.min(sobrenomes.length, 2); i++) {
+            iniciais += sobrenomes[i][0];
+        }
+        return primeiro + removerAcentos(iniciais);
+    }
+
+    function gerarSenha(nomeCompleto) {
+        if (!nomeCompleto || !nomeCompleto.trim()) return '';
+        const partes = nomeCompleto.trim().split(/\s+/);
+        const primeiro = removerAcentos(partes[0].toLowerCase());
+        const num = Math.floor(Math.random() * 99) + 1;
+        return primeiro + '@' + num.toString().padStart(2, '0');
+    }
+
+    // ============================================================
+    // BOTÕES "GERAR" (🪄)
+    // ============================================================
+    document.getElementById('btnGerarUsuario')?.addEventListener('click', function () {
+        const nome = document.getElementById('Nome')?.value || '';
+        if (!nome.trim()) {
+            Swal.fire({
+                icon: 'info',
+                title: 'Nome vazio',
+                text: 'Preencha o nome completo antes de gerar o usuário.'
+            });
+            return;
+        }
+        const el = document.getElementById('Usuario');
+        el.value = gerarNomeUsuario(nome);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        verificarDirty();
+        Toast.fire({ icon: 'success', title: 'Usuário gerado: ' + el.value });
+    });
+
+    document.getElementById('btnGerarSenha')?.addEventListener('click', function () {
+        const nome = document.getElementById('Nome')?.value || '';
+        if (!nome.trim()) {
+            Swal.fire({
+                icon: 'info',
+                title: 'Nome vazio',
+                text: 'Preencha o nome completo antes de gerar a senha.'
+            });
+            return;
+        }
+        const el = document.getElementById('Senha');
+        el.value = gerarSenha(nome);
+        // garante que está visível para o usuário ver a senha gerada
+        if (el.type === 'password') {
+            el.type = 'text';
+            const icon = document.getElementById('toggleSenha')?.querySelector('i');
+            if (icon) { icon.classList.remove('fa-eye'); icon.classList.add('fa-eye-slash'); }
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        verificarDirty();
+        Toast.fire({ icon: 'success', title: 'Senha gerada: ' + el.value });
+    });
+
+    // Auto-preenchimento defensivo (só se campo vazio)
+    document.getElementById('Nome')?.addEventListener('input', function () {
+        const valor = this.value.trim();
+        if (!valor) return;
+        const elU = document.getElementById('Usuario');
+        const elS = document.getElementById('Senha');
+        if (elU && !elU.value) {
+            elU.value = gerarNomeUsuario(valor);
+            elU.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        if (elS && !elS.value) {
+            elS.value = gerarSenha(valor);
+            elS.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+
+    // ============================================================
+    // FOTO — PREVIEW / UPLOAD / REMOÇÃO
+    // ============================================================
+    const fotoInput    = document.getElementById('Foto');
+    const fotoPreview  = document.getElementById('fotoPreview');
+    const btnRemoverFoto = document.getElementById('btnRemoverFoto');
+    const removerFotoHidden = document.getElementById('RemoverFoto');
+
+    let currentFotoDataUrl = HAS_FOTO_INICIAL
+        ? (fotoPreview.querySelector('img')?.getAttribute('src') || null)
+        : null;
+    let fotoTouched = false;
+
+    function atualizarFotoUI() {
+        if (currentFotoDataUrl) {
+            fotoPreview.innerHTML = '<img src="' + currentFotoDataUrl + '" alt="">';
+            if (btnRemoverFoto) btnRemoverFoto.style.display = '';
+        } else {
+            fotoPreview.innerHTML = '<i class="fas fa-camera"></i>';
+            if (btnRemoverFoto) btnRemoverFoto.style.display = 'none';
+        }
+    }
+
+    fotoInput?.addEventListener('change', function () {
+        const file = this.files && this.files[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            Swal.fire({ icon: 'error', title: 'Arquivo inválido', text: 'Selecione uma imagem JPG, PNG ou WEBP.' });
+            this.value = '';
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            Swal.fire({ icon: 'error', title: 'Imagem muito grande', text: 'O limite é 5 MB.' });
+            this.value = '';
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            currentFotoDataUrl = e.target.result;
+            removerFotoHidden.value = '0';
+            atualizarFotoUI();
+            fotoTouched = true;
+            verificarDirty();
+        };
+        reader.readAsDataURL(file);
+    });
+
+    btnRemoverFoto?.addEventListener('click', function () {
+        Swal.fire({
+            title: 'Remover foto?',
+            text: 'A foto atual do usuário será excluída ao salvar.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sim, remover',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280'
+        }).then(r => {
+            if (!r.isConfirmed) return;
+            if (fotoInput) fotoInput.value = '';
+            currentFotoDataUrl = null;
+            removerFotoHidden.value = '1';
+            atualizarFotoUI();
+            fotoTouched = true;
+            verificarDirty();
+        });
     });
 
     // ============================================================
@@ -1011,26 +1333,23 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
     });
 
     // ============================================================
-    // Permissão → atualiza Função + Ações
+    // Permissão → Função + Ações
     // ============================================================
     function aplicarPermissao(radio) {
         if (!radio) return;
         document.getElementById('Funcao').value = radio.dataset.funcao || '';
         document.getElementById('Acoes').value  = radio.dataset.acoes  || '';
-
         document.querySelectorAll('input[name="Permissao"]').forEach(r => {
             r.closest('.option-card')?.classList.toggle('is-checked', r.checked);
         });
     }
-
     document.querySelectorAll('input[name="Permissao"]').forEach(radio => {
         radio.addEventListener('change', () => aplicarPermissao(radio));
     });
-    // estado inicial
     aplicarPermissao(document.querySelector('input[name="Permissao"]:checked'));
 
     // ============================================================
-    // Grupo (radio cards)
+    // Grupo
     // ============================================================
     document.querySelectorAll('input[name="ID_Grupo"]').forEach(radio => {
         radio.addEventListener('change', () => {
@@ -1050,7 +1369,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
         const data = new FormData(form);
         const obj = {};
         for (const [k, v] of data.entries()) {
-            if (k === 'csrf_token') continue;
+            if (k === 'csrf_token' || k === 'Foto') continue;
             obj[k] = v;
         }
         return JSON.stringify(obj);
@@ -1058,7 +1377,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
 
     function verificarDirty() {
         if (!formOriginal) return false;
-        const dirty = capturarEstado() !== formOriginal;
+        const dirty = capturarEstado() !== formOriginal || fotoTouched;
         const badge = document.getElementById('dirtyBadge');
         const hint  = document.getElementById('actionHint');
         badge.classList.toggle('visible', dirty);
@@ -1072,7 +1391,6 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
         el.addEventListener('change', verificarDirty);
     });
 
-    // Aviso ao sair
     window.addEventListener('beforeunload', function (e) {
         if (verificarDirty()) {
             e.preventDefault();
@@ -1084,7 +1402,6 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
     // Submit
     // ============================================================
     document.getElementById('formEditar').addEventListener('submit', function (e) {
-        // validação nativa do browser
         if (!this.checkValidity()) {
             e.preventDefault();
             this.reportValidity();
@@ -1096,7 +1413,7 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
     });
 
     // ============================================================
-    // Flash messages
+    // Flash
     // ============================================================
     <?php if (isset($_SESSION['MsgSucesso'])): ?>
         Toast.fire({ icon: 'success', title: <?= json_encode(strip_tags($_SESSION['MsgSucesso'])) ?> });
@@ -1109,7 +1426,6 @@ $permAtual = getPermissaoInfo($form_data['Permissao'] ?? 0);
 </body>
 </html>
 <?php
-// Fecha conexão com segurança
 if (isset($conn) && $conn instanceof PDO) { $conn = null; }
 if (isset($pdo)  && $pdo  instanceof PDO) { $pdo  = null; }
 ?>

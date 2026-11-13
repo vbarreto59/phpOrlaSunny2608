@@ -1,4 +1,5 @@
 <?php
+// usr_listar.php
 // ============================================================
 // SESSION PRIMEIRO
 // ============================================================
@@ -51,8 +52,6 @@ $usuarios = [];
 $erro = null;
 
 try {
-    // GROUP_CONCAT traz todos os grupos numa única query
-    // JOIN com sunnyempresas usando alias para evitar colisão
     $sql = "
         SELECT 
             u.*,
@@ -490,6 +489,8 @@ function permissoesBadge($permissao) {
         table.dataTable.table-neo tbody tr:last-child td { border-bottom: none !important; }
         table.dataTable.table-neo tbody tr:hover td { background: rgba(0,0,0,0.025); }
         table.dataTable.table-neo tbody tr.row-inativo td { opacity: 0.6; }
+        /* Coluna de ações NUNCA fica esmaecida */
+        table.dataTable.table-neo tbody tr.row-inativo td:last-child { opacity: 1; }
 
         /* Célula usuário */
         .user-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -613,6 +614,7 @@ function permissoesBadge($permissao) {
         .actions-group {
             display: inline-flex;
             gap: 4px;
+            align-items: center;
         }
         .btn-icon {
             width: 32px; height: 32px;
@@ -631,6 +633,34 @@ function permissoesBadge($permissao) {
         .btn-icon.edit   { background: var(--warning); color: #000; }
         .btn-icon.mail   { background: var(--info);    color: #fff; }
         .btn-icon.delete { background: var(--danger);  color: #fff; }
+
+        /* Switch (toggle) de Ativar/Desativar */
+        .btn-switch {
+            width: 40px; height: 22px;
+            background: #d1d5db;
+            border: 2px solid var(--shadow-color);
+            border-radius: 999px;
+            box-shadow: 2px 2px 0 0 var(--shadow-color);
+            position: relative;
+            cursor: pointer;
+            transition: all 0.15s;
+            padding: 0;
+            flex-shrink: 0;
+        }
+        .btn-switch::after {
+            content: "";
+            position: absolute;
+            width: 14px; height: 14px;
+            background: #fff;
+            border-radius: 50%;
+            top: 2px; left: 2px;
+            transition: transform 0.2s;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+        }
+        .btn-switch:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 0 var(--shadow-color); }
+        .btn-switch.on     { background: var(--success); }
+        .btn-switch.on::after { transform: translateX(18px); }
+        .btn-switch:disabled { opacity: 0.5; cursor: wait; }
 
         /* DataTables */
         .dataTables_wrapper .dataTables_filter { display: none; }
@@ -836,7 +866,7 @@ function permissoesBadge($permissao) {
                     <th style="width: 110px;">Status</th>
                     <th style="width: 150px;">Função</th>
                     <th style="width: 200px;">Grupos</th>
-                    <th style="width: 130px;">Ações</th>
+                    <th style="width: 160px;">Ações</th>
                 </tr>
             </thead>
             <tbody>
@@ -861,7 +891,6 @@ function permissoesBadge($permissao) {
                     $creci    = $u['CRECI'] ?? '';
                     $senha    = $u['SenhaAtual'] ?? '';
 
-                    // Data com fallback (várias nomenclaturas possíveis)
                     $dataCadastro = $u['DataHoraCadastro']
                                  ?? $u['DataCadastro']
                                  ?? $u['Data']
@@ -870,20 +899,18 @@ function permissoesBadge($permissao) {
                              ? date('d/m/Y', strtotime($dataCadastro))
                              : '—';
 
-                    // Grupos via GROUP_CONCAT
                     $grupos = !empty($u['GruposStr'])
                             ? explode('||', $u['GruposStr'])
                             : [];
 
-                    // Foto
                     $fotoPath = __DIR__ . "/fotos/" . $uid . ".jpg";
                     $hasFoto  = $uid > 0 && file_exists($fotoPath);
                     $initial  = strtoupper(mb_substr($usuario, 0, 1));
 
-                    // Badge
                     $perm = permissoesBadge($permissao);
                 ?>
                     <tr class="<?= $ativo ? '' : 'row-inativo' ?>"
+                        data-uid="<?= $uid ?>"
                         data-status="<?= $ativo ? '1' : '0' ?>">
                         <td>
                             <span style="font-family:'SFMono-Regular',Consolas,monospace;font-size:0.74rem;background:rgba(0,0,0,0.06);padding:3px 8px;border-radius:6px;font-weight:800;">
@@ -960,21 +987,39 @@ function permissoesBadge($permissao) {
                         </td>
                         <td>
                             <div class="actions-group">
+                                <!-- Toggle Ativar/Desativar -->
+                                <button type="button"
+                                        class="btn-switch <?= $ativo ? 'on' : 'off' ?>"
+                                        data-uid="<?= $uid ?>"
+                                        data-ativo="<?= $ativo ? '1' : '0' ?>"
+                                        data-nome="<?= htmlspecialchars($usuario, ENT_QUOTES) ?>"
+                                        title="<?= $ativo ? 'Desativar usuário' : 'Ativar usuário' ?>"
+                                        aria-label="<?= $ativo ? 'Desativar' : 'Ativar' ?>"
+                                        onclick="confirmarToggle(this)"></button>
+
+                                <!-- Editar -->
                                 <a href="usr_edit.php?id=<?= $uid ?>"
                                    target="_blank"
                                    class="btn-icon edit" title="Editar">
                                     <i class="fas fa-pen"></i>
                                 </a>
+
+                                <!-- Enviar credenciais (data-*) -->
                                 <button type="button"
                                         class="btn-icon mail"
+                                        data-uid="<?= $uid ?>"
                                         title="Enviar credenciais"
-                                        onclick="confirmarEnvio(<?= $uid ?>)">
+                                        onclick="confirmarEnvio(this)">
                                     <i class="fas fa-envelope"></i>
                                 </button>
+
+                                <!-- Excluir (data-*) -->
                                 <button type="button"
                                         class="btn-icon delete"
+                                        data-uid="<?= $uid ?>"
+                                        data-nome="<?= htmlspecialchars($usuario, ENT_QUOTES) ?>"
                                         title="Excluir"
-                                        onclick="confirmarExclusao(<?= $uid ?>, <?= json_encode($usuario) ?>)">
+                                        onclick="confirmarExclusao(this)">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </div>
@@ -993,17 +1038,13 @@ function permissoesBadge($permissao) {
     </footer>
 </div>
 
-<!-- ============================================================ -->
-<!-- FORM OCULTO PARA EXCLUSÃO (POST com CSRF)                   -->
-<!-- ============================================================ -->
+<!-- FORM OCULTO PARA EXCLUSÃO (POST com CSRF) -->
 <form method="POST" action="usr_excluir.php" id="formDelete" style="display:none;">
     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
     <input type="hidden" name="id" id="deleteId" value="">
 </form>
 
-<!-- ============================================================ -->
-<!-- SCRIPTS                                                      -->
-<!-- ============================================================ -->
+<!-- SCRIPTS -->
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
@@ -1013,7 +1054,13 @@ function permissoesBadge($permissao) {
 (function () {
     'use strict';
 
-    // i18n embutido
+    // Escapa HTML para inserir em Swal (evita XSS)
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => (
+            { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+        ));
+    }
+
     const ptBR = {
         emptyTable:     "Nenhum registro encontrado",
         info:           "Mostrando _START_ a _END_ de _TOTAL_ registros",
@@ -1035,9 +1082,6 @@ function permissoesBadge($permissao) {
         }
     };
 
-    // ============================================================
-    // DATATABLES
-    // ============================================================
     let table = null;
     if (document.getElementById('tabelaUsuarios')) {
         table = new DataTable('#tabelaUsuarios', {
@@ -1052,7 +1096,6 @@ function permissoesBadge($permissao) {
             ]
         });
 
-        // Filtro: só ativos
         $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
             if (settings.nTable.id !== 'tabelaUsuarios') return true;
             const $f = document.getElementById('filterAtivo');
@@ -1066,9 +1109,7 @@ function permissoesBadge($permissao) {
         });
     }
 
-    // ============================================================
     // BUSCA
-    // ============================================================
     const $search = document.getElementById('searchInput');
     const $clear  = document.getElementById('searchClear');
     let timer;
@@ -1094,9 +1135,7 @@ function permissoesBadge($permissao) {
         });
     }
 
-    // ============================================================
     // TOGGLE SENHA
-    // ============================================================
     window.toggleSenha = function (id, btn) {
         const $span = document.getElementById(id);
         const $mask = $span.previousElementSibling;
@@ -1116,9 +1155,11 @@ function permissoesBadge($permissao) {
     };
 
     // ============================================================
-    // ENVIAR CREDENCIAIS
+    // ENVIAR CREDENCIAIS (data-uid)
     // ============================================================
-    window.confirmarEnvio = function (id) {
+    window.confirmarEnvio = function (btn) {
+        const id = parseInt(btn.dataset.uid, 10);
+
         Swal.fire({
             title: 'Enviar credenciais?',
             text: 'Um e-mail será enviado ao usuário com os dados de acesso.',
@@ -1136,26 +1177,129 @@ function permissoesBadge($permissao) {
     };
 
     // ============================================================
-    // EXCLUSÃO
+    // EXCLUIR (data-uid / data-nome)
     // ============================================================
-    window.confirmarExclusao = function (id, nome) {
+window.confirmarExclusao = function (btn) {
+    const id   = parseInt(btn.dataset.uid, 10);
+    const nome = btn.dataset.nome || 'este usuário';
+
+    Swal.fire({
+        title: 'Excluir usuário?',
+        html: `O usuário <b>${escapeHtml(nome)}</b> será removido <b>permanentemente</b>.<br>
+               <span style="color:#ef4444;font-size:0.85rem;font-weight:700;">Esta ação não pode ser desfeita.</span>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sim, excluir',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280'
+    }).then(r => {
+        if (!r.isConfirmed) return;
+
+        const fd = new FormData();
+        fd.append('csrf_token', '<?= htmlspecialchars($csrf) ?>');
+        fd.append('id', String(id));
+
+        fetch('usr_excluir_ajax.php', { method: 'POST', body: fd, credentials: 'same-origin' })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok) throw new Error(data.msg || 'Erro ao excluir');
+                // remove a linha da tabela
+                const tr = document.querySelector(`tr[data-uid="${id}"]`);
+                if (tr && table) table.row(tr).remove().draw(false);
+                Swal.fire({ icon:'success', title:'Excluído!', text:'Usuário removido com sucesso.', timer:1500, showConfirmButton:false });
+            })
+            .catch(err => Swal.fire({ icon:'error', title:'Erro', text: err.message }));
+    });
+};
+
+    // ============================================================
+    // TOGGLE ATIVAR/DESATIVAR
+    // ============================================================
+    window.confirmarToggle = function (btn) {
+        const id        = parseInt(btn.dataset.uid, 10);
+        const isActive  = btn.dataset.ativo === '1';
+        const nome      = btn.dataset.nome || 'este usuário';
+        const acao      = isActive ? 'desativar' : 'ativar';
+        const novoAtivo = isActive ? 0 : 1;
+
         Swal.fire({
-            title: 'Excluir usuário?',
-            html: `O usuário <b>${nome}</b> será removido <b>permanentemente</b>.<br>` +
-                  `<span style="color:#ef4444;font-size:0.85rem;font-weight:700;">Esta ação não pode ser desfeita.</span>`,
-            icon: 'warning',
+            title: isActive ? 'Desativar usuário?' : 'Ativar usuário?',
+            html: `O usuário <b>${escapeHtml(nome)}</b> será <b>${acao}do</b>.`,
+            icon: isActive ? 'warning' : 'question',
             showCancelButton: true,
-            confirmButtonText: 'Sim, excluir',
+            confirmButtonText: `Sim, ${acao}`,
             cancelButtonText: 'Cancelar',
-            confirmButtonColor: '#ef4444',
+            confirmButtonColor: isActive ? '#ef4444' : '#10b981',
             cancelButtonColor: '#6b7280'
         }).then(r => {
-            if (r.isConfirmed) {
-                document.getElementById('deleteId').value = id;
-                document.getElementById('formDelete').submit();
-            }
+            if (!r.isConfirmed) return;
+
+            btn.disabled = true;
+
+            const fd = new FormData();
+            fd.append('csrf_token', '<?= htmlspecialchars($csrf) ?>');
+            fd.append('id', String(id));
+            fd.append('ativo', String(novoAtivo));
+
+            fetch('usr_toggle_status.php', {
+                method: 'POST',
+                body: fd,
+                credentials: 'same-origin'
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.ok) throw new Error(data.msg || 'Erro ao atualizar status');
+                    atualizarLinhaStatus(id, novoAtivo === 1);
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Feito!',
+                        text: `Usuário ${acao}do com sucesso.`,
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+                })
+                .catch(err => {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Erro',
+                        text: err.message || 'Falha na comunicação com o servidor.'
+                    });
+                })
+                .finally(() => { btn.disabled = false; });
         });
     };
+
+    // Atualiza a linha inteira (badge, switch e filtros) sem recarregar
+    function atualizarLinhaStatus(id, novoAtivo) {
+        const tr = document.querySelector(`tr[data-uid="${id}"]`);
+        if (!tr) return;
+
+        tr.dataset.status = novoAtivo ? '1' : '0';
+        tr.classList.toggle('row-inativo', !novoAtivo);
+
+        // Badge de status
+        const badge = tr.querySelector('.badge-status');
+        if (badge) {
+            badge.className = 'badge-status ' + (novoAtivo ? 'on' : 'off');
+            badge.innerHTML =
+                '<i class="fas fa-' + (novoAtivo ? 'check-circle' : 'ban') + '"></i> ' +
+                (novoAtivo ? 'Ativo' : 'Inativo');
+        }
+
+        // Switch
+        const sw = tr.querySelector('.btn-switch');
+        if (sw) {
+            sw.dataset.ativo = novoAtivo ? '1' : '0';
+            sw.classList.toggle('on', novoAtivo);
+            sw.classList.toggle('off', !novoAtivo);
+            sw.title = novoAtivo ? 'Desativar usuário' : 'Ativar usuário';
+            sw.setAttribute('aria-label', novoAtivo ? 'Desativar' : 'Ativar');
+        }
+
+        // Reaplica filtro (caso "Só ativos" esteja ligado)
+        if (table) table.draw(false);
+    }
 
 })();
 </script>

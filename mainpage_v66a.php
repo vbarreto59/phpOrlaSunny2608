@@ -991,6 +991,11 @@ body {
                 <i class="fas fa-map"></i> Mapa
             </button>
         </div>
+        <div class="dropdown">
+            <button class="btn btn-menu" type="button" onclick="window.open('listar_captacoes.php', '_blank')">
+                <i class="fas fa-map"></i> Captações
+            </button>
+        </div>
 
         <?php if (UsuarioPodeEditar()): ?>
         <?php endif; ?>

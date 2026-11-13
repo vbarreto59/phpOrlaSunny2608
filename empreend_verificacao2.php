@@ -55,10 +55,9 @@ function camposFaltantes($emp) {
         $add('Localização', 'Distância do Mar (m)', $emp['ProximoMar']);
     }
 
-    // Entrega
-    $add('Entrega', 'Data de Entrega', $emp['DataEntrega']);   // ✅ era AnoEntrega (bug)
-    $add('Entrega', 'Mês de Entrega',  $emp['MesEntrega']);
-    $add('Entrega', 'Ano de Entrega',  $emp['AnoEntrega']);
+    // Entrega (Removida a checagem de DataEntrega, agora foca em Mês e Ano)
+    $add('Entrega', 'Mês de Entrega', $emp['MesEntrega']);
+    $add('Entrega', 'Ano de Entrega', $emp['AnoEntrega']);
 
     // Características
     $add('Características', 'Tipologia',          $emp['Tipologia']);
@@ -82,10 +81,15 @@ function camposFaltantes($emp) {
 // --- Carrega e enriquece os empreendimentos ---
 $empreendimentos = [];
 $error_message   = null;
-$totalVerificadosPadrao = 12; // 13 se não for beira-mar
+$totalVerificadosPadrao = 11; // <-- Ajustado de 12 para 11 (removido Data de Entrega)
+
+// Array de meses para formatar a exibição
+$mesesAbrev = [
+    1 => 'Jan', 2 => 'Fev', 3 => 'Mar', 4 => 'Abr', 5 => 'Mai', 6 => 'Jun',
+    7 => 'Jul', 8 => 'Ago', 9 => 'Set', 10 => 'Out', 11 => 'Nov', 12 => 'Dez'
+];
 
 try {
-    // ✅ CORREÇÃO: JOIN com empresa + colunas faltantes
     $sql = "SELECT e.Empreend_ID, e.NomeEmpreendimento, e.Empresa_Id, e.AnoEntrega, e.MesEntrega,
                    e.BeiraMar, e.Localidade, e.RespCadastro, e.DataEntrega, e.VagasGaragem,
                    e.TipoGaragem, e.MetragemMin, e.MetragemMax, e.Tipologia, e.Descricao,
@@ -109,6 +113,21 @@ try {
             ? round((($totalCampos - $qtdFaltantes) / $totalCampos) * 100)
             : 100;
 
+        // Formatação da data de entrega (Mês/Ano)
+        $mesNum = (int)($r['MesEntrega'] ?? 0);
+        $anoNum = (int)($r['AnoEntrega'] ?? 0);
+        $mesStr = $mesesAbrev[$mesNum] ?? '';
+        $anoStr = $anoNum > 0 ? (string)$anoNum : '';
+        
+        $entregaStr = '';
+        if ($mesStr && $anoStr) {
+            $entregaStr = "{$mesStr}/{$anoStr}";
+        } elseif ($mesStr) {
+            $entregaStr = $mesStr;
+        } elseif ($anoStr) {
+            $entregaStr = $anoStr;
+        }
+
         $empreendimentos[] = [
             'id'              => $r['Empreend_ID'],
             'nome'            => $r['NomeEmpreendimento'],
@@ -116,6 +135,7 @@ try {
             'localidade'      => $r['Localidade'] ?? '',
             'resp'            => trim((string)($r['RespCadastro'] ?? '')) !== '' ? $r['RespCadastro'] : '(sem responsável)',
             'beiraMar'        => (int)$r['BeiraMar'],
+            'entrega'         => $entregaStr,
             'faltantes'       => $faltantes,
             'qtdFaltantes'    => $qtdFaltantes,
             'totalCampos'     => $totalCampos,
@@ -592,6 +612,10 @@ ksort($porResponsavel, SORT_NATURAL | SORT_FLAG_CASE);
         .emp-meta .chip i { font-size: 0.7rem; opacity: 0.7; }
         .emp-meta .chip.bm { background: rgba(23,162,184,0.15); color: var(--info); }
         .emp-meta .chip.empresa { background: var(--shadow-color); color: #fff; text-transform: uppercase; }
+        
+        /* Chip de Entrega */
+        .emp-meta .chip.entrega { background: rgba(40,167,69,0.15); color: var(--success); }
+        .emp-meta .chip.entrega-empty { background: rgba(220,53,69,0.1); color: var(--danger); font-style: italic; }
 
         .emp-percentual {
             flex-shrink: 0;
@@ -864,7 +888,7 @@ ksort($porResponsavel, SORT_NATURAL | SORT_FLAG_CASE);
         <div class="toolbar-left">
             <div class="search-box">
                 <i class="fas fa-search icon"></i>
-                <input type="text" id="searchInput" placeholder="Buscar por empreendimento, empresa ou responsável…" autocomplete="off">
+                <input type="text" id="searchInput" placeholder="Buscar por nome, empresa, localidade ou ano de entrega…" autocomplete="off">
                 <button type="button" class="clear" id="searchClear" title="Limpar busca">
                     <i class="fas fa-times"></i>
                 </button>
@@ -900,7 +924,7 @@ ksort($porResponsavel, SORT_NATURAL | SORT_FLAG_CASE);
             <?php foreach ($emps as $e): ?>
             <div class="emp-card <?php echo $e['qtdFaltantes'] > 0 ? 'is-pending' : 'is-complete'; ?>"
                  data-pendente="<?php echo $e['qtdFaltantes'] > 0 ? '1' : '0'; ?>"
-                 data-search="<?php echo htmlspecialchars(strtolower($e['nome'] . ' ' . $e['empresa'] . ' ' . $e['localidade'] . ' ' . $e['resp'] . ' ' . $e['id'])); ?>">
+                 data-search="<?php echo htmlspecialchars(strtolower($e['nome'] . ' ' . $e['empresa'] . ' ' . $e['localidade'] . ' ' . $e['resp'] . ' ' . $e['id'] . ' ' . $e['entrega'])); ?>">
 
                 <div class="emp-top">
                     <div class="emp-info">
@@ -910,9 +934,18 @@ ksort($porResponsavel, SORT_NATURAL | SORT_FLAG_CASE);
                         </h3>
                         <div class="emp-meta">
                             <span class="chip empresa"><i class="fas fa-building"></i> <?php echo htmlspecialchars($e['empresa']); ?></span>
+                            
                             <?php if ($e['localidade']): ?>
                                 <span class="chip"><i class="fas fa-map-marker-alt"></i> <?php echo htmlspecialchars($e['localidade']); ?></span>
                             <?php endif; ?>
+                            
+                            <!-- Exibição do Mês/Ano de Entrega -->
+                            <?php if ($e['entrega']): ?>
+                                <span class="chip entrega" title="Previsão de Entrega"><i class="fas fa-calendar-check"></i> <?php echo htmlspecialchars($e['entrega']); ?></span>
+                            <?php else: ?>
+                                <span class="chip entrega-empty" title="Sem data de entrega"><i class="fas fa-calendar-times"></i> Sem data</span>
+                            <?php endif; ?>
+
                             <?php if ($e['beiraMar']): ?>
                                 <span class="chip bm"><i class="fas fa-umbrella-beach"></i> Beira Mar</span>
                             <?php endif; ?>

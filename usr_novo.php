@@ -1,4 +1,5 @@
 <?php
+// usr_novo.php
 session_start();
 require_once 'conn.php';
 require_once 'theme_config.php'; // <-- TEMA
@@ -15,7 +16,7 @@ function getPermissaoTexto($codigo) {
     return $map[$codigo] ?? "DESCONHECIDO";
 }
 
-// Fallback de tema (caso theme_config não defina algumas variáveis)
+// Fallback de tema
 $theme = array_merge([
     'primary'      => '#0d6efd',
     'primary_dark' => '#0a58ca',
@@ -89,6 +90,28 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $erros[] = "Selecione uma empresa válida.";
     }
 
+    // -------- VALIDAÇÃO DA FOTO (antes da transação) --------
+    $fotoFile   = $_FILES['Foto'] ?? null;
+    $fotoValida = false;
+    $fotoInfo   = null;
+
+    if ($fotoFile && $fotoFile['error'] !== UPLOAD_ERR_NO_FILE) {
+        if ($fotoFile['error'] !== UPLOAD_ERR_OK) {
+            $erros[] = "Falha no upload da imagem (código " . (int)$fotoFile['error'] . ").";
+        } elseif ($fotoFile['size'] > 5 * 1024 * 1024) {
+            $erros[] = "A imagem excede o limite de 5 MB.";
+        } else {
+            $fotoInfo = @getimagesize($fotoFile['tmp_name']);
+            if (!$fotoInfo) {
+                $erros[] = "O arquivo enviado não é uma imagem válida.";
+            } elseif (!in_array($fotoInfo[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP], true)) {
+                $erros[] = "Formato de imagem não suportado. Use JPG, PNG ou WEBP.";
+            } else {
+                $fotoValida = true;
+            }
+        }
+    }
+
     if (empty($erros)) {
         $stmt = $conn->prepare("SELECT 1 FROM usuarios WHERE Usuario = ?");
         $stmt->execute([$usuario]);
@@ -120,6 +143,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     }
 
     if (empty($erros)) {
+        $destPath = null;
         try {
             $conn->beginTransaction();
 
@@ -137,10 +161,52 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $_SESSION['Usuario'] ?? 'SISTEMA'
             ]);
 
-            $new_user_id = $conn->lastInsertId();
+            $new_user_id = (int)$conn->lastInsertId();
 
             $stmt = $conn->prepare("INSERT INTO usuario_grupo (UserId, ID_Grupo) VALUES (?, ?)");
             $stmt->execute([$new_user_id, (int)$id_grupo]);
+
+            // -------- SALVA A FOTO COMO fotos/{id}.jpg --------
+            if ($fotoValida && $new_user_id > 0) {
+                $destDir = __DIR__ . '/fotos';
+                if (!is_dir($destDir) && !@mkdir($destDir, 0775, true) && !is_dir($destDir)) {
+                    throw new Exception("Não foi possível criar a pasta fotos/.");
+                }
+                $destPath = $destDir . '/' . $new_user_id . '.jpg';
+
+                $img = null;
+                switch ($fotoInfo[2]) {
+                    case IMAGETYPE_JPEG: $img = @imagecreatefromjpeg($fotoFile['tmp_name']); break;
+                    case IMAGETYPE_PNG:  $img = @imagecreatefrompng($fotoFile['tmp_name']);  break;
+                    case IMAGETYPE_WEBP: $img = @imagecreatefromwebp($fotoFile['tmp_name']); break;
+                }
+
+                if ($img) {
+                    $w = imagesx($img); $h = imagesy($img);
+                    $max = 500;
+                    if ($w > $max || $h > $max) {
+                        $ratio = min($max / $w, $max / $h);
+                        $nw = max(1, (int)round($w * $ratio));
+                        $nh = max(1, (int)round($h * $ratio));
+                        $resized = imagecreatetruecolor($nw, $nh);
+                        imagefill($resized, 0, 0, imagecolorallocate($resized, 255, 255, 255));
+                        imagecopyresampled($resized, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
+                        imagedestroy($img);
+                        $img = $resized;
+                    }
+
+                    $ok = imagejpeg($img, $destPath, 88);
+                    imagedestroy($img);
+
+                    if (!$ok) {
+                        throw new Exception("Falha ao converter/salvar a imagem.");
+                    }
+                } else {
+                    if (!@copy($fotoFile['tmp_name'], $destPath)) {
+                        throw new Exception("Falha ao salvar a imagem no servidor.");
+                    }
+                }
+            }
 
             $conn->commit();
 
@@ -150,7 +216,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             exit();
 
         } catch (Exception $e) {
-            $conn->rollBack();
+            if ($conn->inTransaction()) $conn->rollBack();
+            if ($destPath && file_exists($destPath)) @unlink($destPath);
             $erros[] = "Erro ao criar usuário: " . $e->getMessage();
         }
     }
@@ -289,6 +356,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             letter-spacing: 0;
         }
         .btn-user:hover { transform: none; box-shadow: var(--shadow-sm); }
+        .btn-sm { padding: 0.4rem 0.75rem; font-size: 0.72rem; }
 
         /* ================= ALERTA ERRO ================= */
         .alert {
@@ -588,6 +656,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             font-size: 1.75rem;
             font-weight: 900;
             margin-bottom: 0.7rem;
+            overflow: hidden;
+        }
+        .avatar-circle img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
         }
         .avatar-name {
             font-weight: 800;
@@ -604,9 +678,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             font-weight: 500;
         }
 
-        .preview-field {
-            margin-bottom: 0.85rem;
-        }
+        .preview-field { margin-bottom: 0.85rem; }
         .preview-field:last-child { margin-bottom: 0; }
         .preview-label {
             font-size: 0.68rem;
@@ -696,6 +768,44 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         .status-pill.active   { background: #16a34a; color: #fff; }
         .status-pill.inactive { background: #6b7280; color: #fff; }
 
+        /* ================= FOTO UPLOAD ================= */
+        .foto-upload-wrap {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+            padding: 0.9rem;
+            background: #f8fafc;
+            border: var(--border);
+            border-radius: var(--radius-sm);
+        }
+        .foto-preview {
+            width: 96px;
+            height: 96px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            border: var(--border);
+            box-shadow: var(--shadow-sm);
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        .foto-preview img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+        }
+        .foto-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+            flex: 1;
+            min-width: 0;
+            justify-content: center;
+        }
+
         /* ================= AÇÃO INFERIOR ================= */
         .action-bar {
             display: flex;
@@ -764,7 +874,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <?php endif; ?>
 
     <!-- ================= FORM + PREVIEW ================= -->
-    <form method="post" class="form-layout" id="formUsuario" novalidate>
+    <!-- autocomplete="off" evita que o browser preencha Usuario/Senha com credenciais salvas -->
+    <form method="post" class="form-layout" id="formUsuario"
+          enctype="multipart/form-data" novalidate autocomplete="off">
 
         <!-- ========== COLUNA ESQUERDA (FORM) ========== -->
         <main class="form-main">
@@ -777,6 +889,39 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     <h2>Dados Pessoais</h2>
                 </div>
                 <div class="section-body">
+
+                    <!-- FOTO -->
+                    <div class="row">
+                        <div class="field">
+                            <label>Foto do Usuário</label>
+                            <div class="foto-upload-wrap">
+                                <div class="foto-preview" id="fotoPreview">
+                                    <i class="fas fa-camera"></i>
+                                </div>
+                                <div class="foto-controls">
+                                    <input type="file" id="Foto" name="Foto"
+                                           accept="image/jpeg,image/png,image/webp"
+                                           style="display:none">
+                                    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                                        <button type="button" class="btn btn-secondary btn-sm"
+                                                onclick="document.getElementById('Foto').click()">
+                                            <i class="fas fa-upload"></i> Selecionar Imagem
+                                        </button>
+                                        <button type="button" class="btn btn-secondary btn-sm"
+                                                id="btnRemoverFoto" style="display:none;">
+                                            <i class="fas fa-trash"></i> Remover
+                                        </button>
+                                    </div>
+                                    <div class="helper-text" style="margin-top:0;">
+                                        <i class="fas fa-info-circle"></i>
+                                        JPG, PNG ou WEBP · máx 5&nbsp;MB · salva como <code>fotos/{id}.jpg</code>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- NOME + CRECI -->
                     <div class="row cols-3">
                         <div class="field" style="grid-column: span 2;">
                             <label for="Nome">Nome completo <span class="req">*</span></label>
@@ -784,6 +929,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                                 <span class="prefix"><i class="fas fa-user"></i></span>
                                 <input type="text" id="Nome" name="Nome" required
                                        placeholder="Ex: João da Silva"
+                                       autocomplete="off"
                                        value="<?= htmlspecialchars($form_data['Nome'] ?? '') ?>">
                             </div>
                             <div class="helper-text">
@@ -797,10 +943,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                                 <span class="prefix"><i class="fas fa-id-card"></i></span>
                                 <input type="text" id="CRECI" name="CRECI"
                                        placeholder="Ex: 12345-F"
+                                       autocomplete="off"
                                        value="<?= htmlspecialchars($form_data['CRECI'] ?? '') ?>">
                             </div>
                         </div>
                     </div>
+
+                    <!-- EMAIL + TELEFONE -->
                     <div class="row cols-2">
                         <div class="field">
                             <label for="Email">E-mail</label>
@@ -808,6 +957,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                                 <span class="prefix"><i class="fas fa-envelope"></i></span>
                                 <input type="email" id="Email" name="Email"
                                        placeholder="usuario@empresa.com.br"
+                                       autocomplete="off"
                                        value="<?= htmlspecialchars($form_data['Email'] ?? '') ?>">
                             </div>
                         </div>
@@ -817,6 +967,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                                 <span class="prefix"><i class="fas fa-phone"></i></span>
                                 <input type="text" id="Telefones" name="Telefones"
                                        placeholder="(21) 99999-9999"
+                                       autocomplete="off"
                                        value="<?= htmlspecialchars($form_data['Telefones'] ?? '') ?>">
                             </div>
                         </div>
@@ -839,6 +990,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                                 <span class="prefix"><i class="fas fa-at"></i></span>
                                 <input type="text" id="Usuario" name="Usuario" required
                                        placeholder="login do usuário"
+                                       autocomplete="off"
                                        value="<?= htmlspecialchars($form_data['Usuario'] ?? '') ?>">
                             </div>
                         </div>
@@ -848,6 +1000,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                                 <span class="prefix"><i class="fas fa-lock"></i></span>
                                 <input type="password" id="Senha" name="Senha" required
                                        placeholder="senha inicial"
+                                       autocomplete="new-password"
                                        value="<?= htmlspecialchars($form_data['Senha'] ?? '') ?>">
                                 <span class="suffix" id="togglePassword" title="Mostrar/ocultar senha">
                                     <i class="fas fa-eye"></i>
@@ -1027,33 +1180,61 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 <script>
 // ============================================================
-// FUNÇÕES AUXILIARES (mantidas)
+// ESTADO GLOBAL DA FOTO
+// ============================================================
+let currentFotoDataUrl = null;
+
+// ============================================================
+// GERAÇÃO DE CREDENCIAIS
 // ============================================================
 function removerAcentos(texto) {
     return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
+/**
+ * Usuário = primeiro nome + 1 ou 2 iniciais dos sobrenomes.
+ * Partículas (da, de, do, das, dos, e) são ignoradas.
+ *
+ * Exemplos:
+ *   "João Silva"                 -> joaos
+ *   "João da Silva"              -> joaosi
+ *   "João Silva Santos"          -> joaoss
+ *   "Maria Aparecida Souza"      -> marias
+ *   "Pedro"                      -> pedro
+ */
 function gerarNomeUsuario(nomeCompleto) {
-    if (!nomeCompleto.trim()) return '';
-    const partes = nomeCompleto.toLowerCase().trim().split(/\s+/);
+    if (!nomeCompleto || !nomeCompleto.trim()) return '';
+    const partes = nomeCompleto.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    if (partes.length === 0) return '';
+
+    const particulas = ['da', 'de', 'do', 'das', 'dos', 'e'];
     const primeiro = removerAcentos(partes[0]);
+    const sobrenomes = partes.slice(1).filter(p => !particulas.includes(p) && p.length > 0);
+
+    if (sobrenomes.length === 0) return primeiro;
+
     let iniciais = '';
-    for (let i = 1; i < partes.length; i++) {
-        if (partes[i]) iniciais += partes[i][0];
+    for (let i = 0; i < Math.min(sobrenomes.length, 2); i++) {
+        iniciais += sobrenomes[i][0];
     }
-    return primeiro + iniciais;
+
+    return primeiro + removerAcentos(iniciais);
 }
 
+/**
+ * Senha = primeiro nome + "@" + 2 dígitos (01–99).
+ * Exemplo: "joao@42"
+ */
 function gerarSenha(nomeCompleto) {
-    if (!nomeCompleto.trim()) return '';
+    if (!nomeCompleto || !nomeCompleto.trim()) return '';
     const partes = nomeCompleto.trim().split(/\s+/);
     const primeiro = removerAcentos(partes[0].toLowerCase());
-    const num = Math.floor(Math.random() * 99) + 1;
-    return primeiro + '@tv' + num.toString().padStart(2, '0');
+    const num = Math.floor(Math.random() * 99) + 1; // 1..99
+    return primeiro + '@' + num.toString().padStart(2, '0');
 }
 
 // ============================================================
-// PERMISSÕES (mantidas)
+// PERMISSÕES
 // ============================================================
 function atualizarFuncao() {
     const perm = document.getElementById("Permissao")?.value || "";
@@ -1062,7 +1243,7 @@ function atualizarFuncao() {
     const badgeEl = document.getElementById("badgeFuncao");
     let funcao = "", acoes = "", classe = "";
 
-    switch(perm) {
+    switch (perm) {
         case "1": funcao="SUPERADMIN"; acoes="/GESTAO/SISTEMA/USUARIOS/BACKUP/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/"; classe="superadmin"; break;
         case "2": funcao="ADMIN"; acoes="/USUARIOS/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/"; classe="admin"; break;
         case "3": funcao="GESTOR-EDITOR"; acoes="/GESTOR/CONSULTAR/INCLUIR/EDITAR/EXCLUIR/"; classe="gestor-editor"; break;
@@ -1084,7 +1265,6 @@ function atualizarFuncao() {
         }
     }
 
-    // Atualiza preview da permissão
     const previewPerm = document.getElementById("previewPermissao");
     if (previewPerm) {
         if (classe) {
@@ -1104,15 +1284,20 @@ function atualizarPreview() {
     const senha = document.getElementById("Senha")?.value || "";
     const creci = document.getElementById("CRECI")?.value.trim() || "";
 
-    // Avatar com iniciais
+    // Avatar (sidebar)
     const avatarEl = document.getElementById("avatarInitial");
     if (avatarEl) {
-        if (nome) {
+        if (currentFotoDataUrl) {
+            avatarEl.innerHTML = '<img src="' + currentFotoDataUrl + '" alt="">';
+            avatarEl.style.background = '#fff';
+        } else if (nome) {
             const partes = nome.split(/\s+/).filter(Boolean);
             const iniciais = (partes[0]?.[0] || '') + (partes.length > 1 ? partes[partes.length - 1][0] : '');
             avatarEl.textContent = iniciais.toUpperCase() || '?';
+            avatarEl.style.background = '';
         } else {
             avatarEl.textContent = '?';
+            avatarEl.style.background = '';
         }
     }
 
@@ -1222,39 +1407,95 @@ function atualizarPreview() {
 }
 
 // ============================================================
+// FOTO — PREVIEW + LIMPEZA
+// ============================================================
+function setFotoPreview(dataUrl) {
+    currentFotoDataUrl = dataUrl || null;
+    const preview = document.getElementById("fotoPreview");
+    const btnRemover = document.getElementById("btnRemoverFoto");
+    if (!preview) return;
+
+    if (dataUrl) {
+        preview.innerHTML = '<img src="' + dataUrl + '" alt="Prévia da foto">';
+    } else {
+        preview.innerHTML = '<i class="fas fa-camera"></i>';
+    }
+    if (btnRemover) btnRemover.style.display = dataUrl ? 'inline-flex' : 'none';
+    atualizarPreview();
+}
+
+// ============================================================
+// TRACKING DE EDIÇÃO MANUAL
+// Usa keydown/paste porque autofill do browser NÃO dispara esses eventos.
+// Assim, "digitar" ou "colar" marca como manual; "autofill" não contamina.
+// ============================================================
+function trackManual(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("keydown", () => { el.dataset.manual = '1'; });
+    el.addEventListener("paste",   () => { el.dataset.manual = '1'; });
+    el.addEventListener("input",   atualizarPreview);
+}
+
+// ============================================================
 // INICIALIZAÇÃO
 // ============================================================
 document.addEventListener("DOMContentLoaded", () => {
+    // ---------- Foto ----------
+    const fotoInput = document.getElementById("Foto");
+    const btnRemoverFoto = document.getElementById("btnRemoverFoto");
+
+    fotoInput?.addEventListener("change", function () {
+        const file = this.files && this.files[0];
+        if (!file) {
+            setFotoPreview(null);
+            return;
+        }
+        if (!file.type.startsWith("image/")) {
+            alert("Arquivo inválido. Selecione uma imagem JPG, PNG ou WEBP.");
+            this.value = "";
+            setFotoPreview(null);
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            alert("Imagem muito grande. O limite é 5 MB.");
+            this.value = "";
+            setFotoPreview(null);
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => setFotoPreview(e.target.result);
+        reader.readAsDataURL(file);
+    });
+
+    btnRemoverFoto?.addEventListener("click", () => {
+        if (fotoInput) fotoInput.value = "";
+        setFotoPreview(null);
+    });
+
+    // ---------- Tracking manual (Usuario / Senha) ----------
+    trackManual("Usuario");
+    trackManual("Senha");
+
+    // ---------- Nome -> gera usuário e senha ----------
     const nomeInput = document.getElementById("Nome");
     if (nomeInput) {
-        nomeInput.addEventListener("input", function() {
+        nomeInput.addEventListener("input", function () {
             const valor = this.value.trim();
             const u = valor ? gerarNomeUsuario(valor) : "";
             const s = valor ? gerarSenha(valor) : "";
             const elU = document.getElementById("Usuario");
             const elS = document.getElementById("Senha");
-            // Só regenera se o campo estava vazio ou foi gerado automaticamente
-            if (elU && (!elU.value || elU.dataset.auto !== 'false')) {
-                elU.value = u;
-            }
-            if (elS && (!elS.value || elS.dataset.auto !== 'false')) {
-                elS.value = s;
-            }
+
+            // Só regenera se o campo estiver vazio OU não foi editado manualmente
+            if (elU && (!elU.value || !elU.dataset.manual)) elU.value = u;
+            if (elS && (!elS.value || !elS.dataset.manual)) elS.value = s;
+
             atualizarPreview();
         });
     }
 
-    // Se o usuário editar manualmente, marca como "não automático"
-    document.getElementById("Usuario")?.addEventListener("input", function() {
-        this.dataset.auto = 'false';
-        atualizarPreview();
-    });
-    document.getElementById("Senha")?.addEventListener("input", function() {
-        this.dataset.auto = 'false';
-        atualizarPreview();
-    });
-
-    // Toggle senha
+    // ---------- Toggle senha ----------
     const toggle = document.getElementById("togglePassword");
     const senhaInput = document.getElementById("Senha");
     if (toggle && senhaInput) {
@@ -1267,10 +1508,10 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Switch Ativo
+    // ---------- Switch Ativo ----------
     const ativoCheck = document.getElementById("Ativo");
     if (ativoCheck) {
-        ativoCheck.addEventListener("change", function() {
+        ativoCheck.addEventListener("change", function () {
             const label = document.getElementById("labelAtivo");
             if (label) label.textContent = this.checked ? "ATIVO" : "INATIVO";
             atualizarPreview();
@@ -1278,14 +1519,14 @@ document.addEventListener("DOMContentLoaded", () => {
         ativoCheck.dispatchEvent(new Event('change'));
     }
 
-    // Listeners para preview
+    // ---------- Listeners de preview ----------
     ["idEmp", "ID_Grupo", "CRECI"].forEach(id => {
         document.getElementById(id)?.addEventListener("change", atualizarPreview);
         document.getElementById(id)?.addEventListener("input", atualizarPreview);
     });
 
-    // Aplicar máscara de telefone (opcional)
-    document.getElementById("Telefones")?.addEventListener("input", function() {
+    // ---------- Máscara de telefone ----------
+    document.getElementById("Telefones")?.addEventListener("input", function () {
         let v = this.value.replace(/\D/g, '');
         if (v.length > 10) {
             this.value = v.replace(/^(\d{2})(\d{5})(\d{4}).*/, '($1) $2-$3');
@@ -1298,9 +1539,33 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // Inicializa
+    // ---------- Inicialização ----------
     atualizarFuncao();
     atualizarPreview();
+});
+
+// ============================================================
+// LIMPEZA DE AUTOFILL NO LOAD
+// (roda depois que o browser terminou de autofill)
+// ============================================================
+window.addEventListener("load", function () {
+    setTimeout(function () {
+        const nomeVal = (document.getElementById("Nome")?.value || '').trim();
+        const elU = document.getElementById("Usuario");
+        const elS = document.getElementById("Senha");
+
+        if (!nomeVal) {
+            // Sem nome → qualquer valor em Usuario/Senha é autofill: apaga
+            if (elU && elU.value && !elU.dataset.manual) elU.value = '';
+            if (elS && elS.value && !elS.dataset.manual) elS.value = '';
+            atualizarPreview();
+        } else {
+            // Nome existe (form_data salvo) mas usuario/senha vazios → regenera
+            if (elU && !elU.value) elU.value = gerarNomeUsuario(nomeVal);
+            if (elS && !elS.value) elS.value = gerarSenha(nomeVal);
+            atualizarPreview();
+        }
+    }, 150);
 });
 </script>
 
