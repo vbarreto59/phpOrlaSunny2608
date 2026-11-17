@@ -1,8 +1,10 @@
 <?php
-// controle_manutencao.php
+// manutmenu.php
 
 // Iniciar sessão
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Definir codificação
 header('Content-Type: text/html; charset=UTF-8');
@@ -11,16 +13,32 @@ header('Content-Type: text/html; charset=UTF-8');
 require_once 'manutencao_config.php';
 
 // Verificar se é admin para acessar este menu
-if (!eAdmin()) {
+if (!EAdmin()) {
     header('HTTP/1.1 403 Forbidden');
     echo "Acesso negado - Somente administradores";
     exit();
 }
 
-// Verificar se o sistema está em manutenção
-$emManutencao = estaEmManutencao();
-?>
+// =========================================================================
+// PROCESSAMENTO DA AÇÃO NA PRÓPRIA PÁGINA
+// =========================================================================
+if (isset($_GET['acao'])) {
+    $acao = $_GET['acao'];
+    
+    if ($acao === 'on') {
+        ControlarManutencao(true); // Ativa a manutenção
+    } elseif ($acao === 'off') {
+        ControlarManutencao(false); // Desativa a manutenção
+    }
+    
+    // Redireciona de volta para a mesma página limpa (removendo o parâmetro da URL)
+    header("Location: manutmenu.php");
+    exit();
+}
 
+// Verificar se o sistema está em manutenção
+$emManutencao = EstaEmManutencao();
+?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -86,11 +104,6 @@ $emManutencao = estaEmManutencao();
             background-color: #ffc107;
             color: #212529;
         }
-        .status-img { 
-            max-width: 120px; 
-            margin: 20px auto; 
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
-        }
         h2 {
             color: #343a40;
             margin-bottom: 25px;
@@ -110,12 +123,10 @@ $emManutencao = estaEmManutencao();
         
         <div class="status-panel <?php echo $emManutencao ? 'manutencao-on' : 'manutencao-off'; ?>">
             <?php if ($emManutencao): ?>
-                <!-- Use ícone do Font Awesome -->
                 <i class="fas fa-exclamation-triangle fa-5x" style="color: #dc3545; margin-bottom: 20px;"></i>
                 <h3 style="color: #dc3545;">SISTEMA EM MANUTENÇÃO</h3>
                 <p>Os usuários comuns estão sendo redirecionados para a página de manutenção.</p>
             <?php else: ?>
-                <!-- Use ícone do Font Awesome -->
                 <i class="fas fa-check-circle fa-5x" style="color: #28a745; margin-bottom: 20px;"></i>
                 <h3 style="color: #28a745;">SISTEMA OPERACIONAL</h3>
                 <p>Todos os usuários podem acessar o sistema normalmente.</p>
@@ -123,29 +134,30 @@ $emManutencao = estaEmManutencao();
         </div>
         
         <div class="action-buttons">
-            <a href="ManutencaoOn.php" class="btn btn-on" onclick="return confirm('Tem certeza que deseja ativar o modo manutenção?\\n\\nOs usuários comuns não poderão acessar o sistema.')">
-                <i class="fas fa-power-off"></i> Ativar Modo Manutenção
-            </a>
+            <?php if (!$emManutencao): ?>
+                <!-- Ativa a manutenção chamando a própria página com ?acao=on -->
+                <a href="manutmenu.php?acao=on" class="btn btn-on">
+                    <i class="fas fa-power-off"></i> Ativar Modo Manutenção
+                </a>
+            <?php else: ?>
+                <!-- Desativa a manutenção chamando a própria página com ?acao=off -->
+                <a href="manutmenu.php?acao=off" class="btn btn-off">
+                    <i class="fas fa-check-circle"></i> Desativar Modo Manutenção
+                </a>
+            <?php endif; ?>
             
-            <a href="ManutencaoOff.php" class="btn btn-off" onclick="return confirm('Tem certeza que deseja desativar o modo manutenção?\\n\\nTodos os usuários poderão acessar o sistema normalmente.')">
-                <i class="fas fa-check-circle"></i> Desativar Modo Manutenção
-            </a>
-            
-            <br><br>
-            <a href="menu.php" class="btn btn-warning">
-                <i class="fas fa-arrow-left"></i> Voltar ao Menu
-            </a>
+            <br>
         </div>
         
         <div class="footer-info">
-            <p>Usuário logado: <strong><?php echo htmlspecialchars($_SESSION['usuario'] ?? 'Desconhecido'); ?></strong></p>
+            <p>Usuário logado: <strong><?php echo htmlspecialchars($_SESSION['Usuario'] ?? 'Desconhecido'); ?></strong></p>
             <p>IP: <?php echo htmlspecialchars($_SERVER['REMOTE_ADDR']); ?></p>
             <p>Última verificação: <?php echo date('d/m/Y H:i:s'); ?></p>
         </div>
     </div>
 
     <script>
-        // Confirmar ações
+        // Confirmações via JavaScript para as ações críticas
         document.addEventListener('DOMContentLoaded', function() {
             var btnOn = document.querySelector('.btn-on');
             var btnOff = document.querySelector('.btn-off');

@@ -33,15 +33,32 @@ if (!$imovel) {
     die("<h3 class='text-center mt-5'>Imóvel não encontrado ou indisponível.</h3><div class='text-center mt-3'><a href='vitrine_captacoes.php'>Voltar para a vitrine</a></div>");
 }
 
-// Processa as fotos
+// ============================================================
+// PROCESSAMENTO DAS FOTOS (BUSCA NA PASTA FÍSICA)
+// ============================================================
 $fotos = [];
-if (!empty($imovel['LinkFicha'])) {
-    $jsonFotos = json_decode($imovel['LinkFicha'], true);
-    if (is_array($jsonFotos)) {
-        $fotos = $jsonFotos;
+$placeholder = 'https://placehold.co/800x600/e2e8f0/64748b?text=Sem+Foto';
+$pastaFotos = __DIR__ . '/captacoes/' . $id . '/';
+
+if (is_dir($pastaFotos)) {
+    $arquivos = scandir($pastaFotos);
+    $permitidas = ['jpg', 'jpeg', 'png', 'webp'];
+    
+    foreach ($arquivos as $arq) {
+        if ($arq === '.' || $arq === '..') continue;
+        $ext = strtolower(pathinfo($arq, PATHINFO_EXTENSION));
+        
+        if (in_array($ext, $permitidas)) {
+            // Caminho relativo para o navegador
+            $fotos[] = 'captacoes/' . $id . '/' . $arq;
+        }
     }
 }
-$fotoCapa = count($fotos) > 0 ? $fotos[0] : 'https://placehold.co/800x600/e2e8f0/64748b?text=Sem+Foto';
+
+$fotoCapa = count($fotos) > 0 ? $fotos[0] : $placeholder;
+
+// Verifica se tem latitude e longitude válidas
+$temLocalizacao = (!empty($imovel['Latitude']) && !empty($imovel['Longitude']));
 
 // Formatação de valores
 function formatarMoeda($valor) {
@@ -68,7 +85,7 @@ function formatarMoeda($valor) {
         }
 
         body {
-            background-color: var(--bg_body);
+            background-color: <?= $themeSafe['bg_body'] ?>;
             font-family: 'Inter', sans-serif;
             color: #1e293b;
             padding-bottom: 3rem;
@@ -101,8 +118,8 @@ function formatarMoeda($valor) {
         }
         .thumbnail-container {
             display: flex;
-            gap: 10px;
-            padding: 10px;
+            gap: 12px;
+            padding: 12px;
             overflow-x: auto;
             background: #f8fafc;
             border-top: 1px solid #e2e8f0;
@@ -110,20 +127,40 @@ function formatarMoeda($valor) {
         .thumbnail-container::-webkit-scrollbar { height: 6px; }
         .thumbnail-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
         
+        /* Miniaturas */
+        .thumb-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            opacity: 0.6;
+            transition: all 0.2s;
+        }
+        .thumb-wrapper:hover, .thumb-wrapper.active {
+            opacity: 1;
+        }
         .thumb-img {
             width: 100px;
             height: 70px;
             object-fit: cover;
             border-radius: 6px;
-            cursor: pointer;
-            opacity: 0.6;
-            transition: all 0.2s;
             border: 2px solid transparent;
-            flex-shrink: 0;
+            transition: all 0.2s;
         }
-        .thumb-img:hover, .thumb-img.active {
-            opacity: 1;
+        .thumb-wrapper:hover .thumb-img, .thumb-wrapper.active .thumb-img {
             border-color: var(--primary);
+        }
+        .thumb-label {
+            font-size: 0.7rem;
+            font-weight: 800;
+            color: #64748b;
+            margin-top: 4px;
+            text-transform: uppercase;
+            transition: color 0.2s;
+        }
+        .thumb-wrapper:hover .thumb-label, .thumb-wrapper.active .thumb-label {
+            color: var(--primary);
         }
 
         /* Bloco de Informações */
@@ -137,7 +174,7 @@ function formatarMoeda($valor) {
         }
         .property-type { font-size: 0.85rem; text-transform: uppercase; font-weight: 700; color: #64748b; letter-spacing: 0.5px; margin-bottom: 0.5rem; }
         .property-title { font-size: 1.6rem; font-weight: 800; color: #1e293b; margin-bottom: 0.5rem; line-height: 1.3; }
-        .property-location { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 8px; }
+        .property-location { font-size: 1rem; color: #64748b; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px; }
         
         .price-box { background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 1.5rem; }
         .price-label { font-size: 0.8rem; color: #64748b; font-weight: 600; text-transform: uppercase; }
@@ -147,22 +184,22 @@ function formatarMoeda($valor) {
         /* Características em Grid */
         .features-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-            gap: 1rem;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 0.75rem;
             margin-bottom: 1.5rem;
         }
         .feature-item {
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 0.95rem;
+            gap: 8px;
+            font-size: 0.85rem;
             font-weight: 600;
             color: #334155;
             background: #f1f5f9;
-            padding: 10px;
+            padding: 8px 10px;
             border-radius: 8px;
         }
-        .feature-item i { color: var(--primary); font-size: 1.1rem; width: 20px; text-align: center; }
+        .feature-item i { color: var(--primary); font-size: 1rem; width: 20px; text-align: center; }
 
         /* Lista de Custos */
         .cost-list { list-style: none; padding: 0; margin: 0; }
@@ -199,6 +236,16 @@ function formatarMoeda($valor) {
         
         /* Badge de Estado */
         .badge-custom { background: var(--primary); color: #fff; padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+
+        /* Botão de mapa */
+        .btn-mapa {
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            font-weight: 700; font-size: 0.9rem; text-decoration: none;
+            border: 2px solid var(--primary); color: var(--primary);
+            padding: 0.6rem; border-radius: 8px; margin-bottom: 1.5rem;
+            transition: all 0.2s;
+        }
+        .btn-mapa:hover { background: var(--primary); color: #fff; }
     </style>
 </head>
 <body>
@@ -222,16 +269,19 @@ function formatarMoeda($valor) {
             <!-- Galeria -->
             <div class="gallery-container">
                 <!-- Imagem Principal -->
-                <img src="<?= htmlspecialchars($fotoCapa) ?>" alt="Foto Principal" class="main-photo" id="mainImage" data-bs-toggle="modal" data-bs-target="#modalGaleria">
+                <img src="<?= htmlspecialchars($fotoCapa) ?>" alt="Foto Principal" class="main-photo" id="mainImage" data-bs-toggle="modal" data-bs-target="#modalGaleria" onerror="this.src='https://placehold.co/800x600/e2e8f0/64748b?text=Erro+na+Imagem';">
                 
-                <!-- Miniaturas -->
+                <!-- Miniaturas com Números -->
                 <?php if (count($fotos) > 1): ?>
                 <div class="thumbnail-container">
                     <?php foreach ($fotos as $index => $foto): ?>
-                        <img src="<?= htmlspecialchars($foto) ?>" 
-                             class="thumb-img <?= $index === 0 ? 'active' : '' ?>" 
-                             onclick="trocarFoto(this, '<?= htmlspecialchars($foto) ?>')"
-                             alt="Miniatura <?= $index + 1 ?>">
+                        <div class="thumb-wrapper <?= $index === 0 ? 'active' : '' ?>" onclick="trocarFoto(this, '<?= htmlspecialchars($foto) ?>')">
+                            <img src="<?= htmlspecialchars($foto) ?>" 
+                                 class="thumb-img" 
+                                 alt="Miniatura <?= $index + 1 ?>"
+                                 onerror="this.style.display='none';">
+                            <span class="thumb-label">Foto <?= str_pad($index + 1, 2, '0', STR_PAD_LEFT) ?></span>
+                        </div>
                     <?php endforeach; ?>
                 </div>
                 <?php endif; ?>
@@ -300,6 +350,13 @@ function formatarMoeda($valor) {
                     <?= htmlspecialchars($imovel['Localidade'] ?? 'Localização não informada') ?>
                 </div>
 
+                <!-- BOTÃO DO MAPA (EXIBIDO APENAS SE TIVER LATITUDE E LONGITUDE) -->
+                <?php if ($temLocalizacao): ?>
+                    <a href="https://www.google.com/maps?q=<?= urlencode($imovel['Latitude']) ?>,<?= urlencode($imovel['Longitude']) ?>" target="_blank" class="btn-mapa">
+                        <i class="fas fa-map-marked-alt"></i> Abrir Localização no Mapa
+                    </a>
+                <?php endif; ?>
+
                 <div class="price-box">
                     <div class="price-label">Valor Desejado</div>
                     <div class="price-value"><?= formatarMoeda($imovel['ValorDesejado'] ?? $imovel['ValorMercado']) ?></div>
@@ -310,6 +367,8 @@ function formatarMoeda($valor) {
 
                 <h5 class="fw-bold mb-3 border-bottom pb-2">Características</h5>
                 <div class="features-grid">
+                    
+                    <!-- Características Básicas -->
                     <?php if (!empty($imovel['MetragemTotal'])): ?>
                         <div class="feature-item"><i class="fas fa-ruler-combined"></i> <?= number_format($imovel['MetragemTotal'], 0, ',', '.') ?> m²</div>
                     <?php endif; ?>
@@ -345,6 +404,91 @@ function formatarMoeda($valor) {
                     <?php if (!empty($imovel['AnoEntrega'])): ?>
                         <div class="feature-item"><i class="fas fa-calendar-alt"></i> Ano: <?= htmlspecialchars($imovel['AnoEntrega']) ?></div>
                     <?php endif; ?>
+
+                    <!-- CARACTERÍSTICAS 1 (LAZER E BEM-ESTAR) -->
+                    <?php if (!empty($imovel['BeiraMar']) && $imovel['BeiraMar'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-water"></i> Beira Mar</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['RoofTop']) && $imovel['RoofTop'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-city"></i> RoofTop</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Piscina2']) && $imovel['Piscina2'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-swimming-pool"></i> Piscina</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['PiscinaPrivativa']) && $imovel['PiscinaPrivativa'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-swimming-pool"></i> Piscina Privativa</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Academia']) && $imovel['Academia'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-dumbbell"></i> Academia</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Sauna']) && $imovel['Sauna'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-hot-tub"></i> Sauna</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Spa']) && $imovel['Spa'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-spa"></i> Spa</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Hidromassagem']) && $imovel['Hidromassagem'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-hot-tub"></i> Hidromassagem</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['QuadraTenis']) && $imovel['QuadraTenis'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-table-tennis"></i> Quadra de Tênis</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['EspacoGourmet']) && $imovel['EspacoGourmet'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-utensils"></i> Espaço Gourmet</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['VarandaGourmet']) && $imovel['VarandaGourmet'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-cocktail"></i> Varanda Gourmet</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Varanda']) && $imovel['Varanda'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-border-all"></i> Varanda</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['LoungeBar']) && $imovel['LoungeBar'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-glass-martini-alt"></i> Lounge Bar</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Restaurante']) && $imovel['Restaurante'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-concierge-bell"></i> Restaurante</div>
+                    <?php endif; ?>
+
+                    <!-- Descrições Extras de Piscina -->
+                    <?php if (!empty($imovel['Piscina'])): ?>
+                        <div class="feature-item"><i class="fas fa-swimming-pool"></i> <?= htmlspecialchars($imovel['Piscina']) ?></div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['TipoPiscina'])): ?>
+                        <div class="feature-item"><i class="fas fa-swimming-pool"></i> Piscina: <?= htmlspecialchars($imovel['TipoPiscina']) ?></div>
+                    <?php endif; ?>
+
+                    <!-- CARACTERÍSTICAS 2 (SERVIÇOS E ESTRUTURA) -->
+                    <?php if (!empty($imovel['PetPlace']) && $imovel['PetPlace'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-paw"></i> Pet Place</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Coworking']) && $imovel['Coworking'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-laptop-house"></i> Coworking</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Emporio']) && $imovel['Emporio'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-shopping-basket"></i> Empório</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Recepcao24h']) && $imovel['Recepcao24h'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-concierge-bell"></i> Recepção 24h</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Brinquedoteca']) && $imovel['Brinquedoteca'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-child"></i> Brinquedoteca</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Salaojogos']) && $imovel['Salaojogos'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-gamepad"></i> Sala de Jogos</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Lavanderia']) && $imovel['Lavanderia'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-tshirt"></i> Lavanderia</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['Bicicletario']) && $imovel['Bicicletario'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-bicycle"></i> Bicicletário</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['GasEncanado']) && $imovel['GasEncanado'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-fire"></i> Gás Encanado</div>
+                    <?php endif; ?>
+                    <?php if (!empty($imovel['FechaduraEletronica']) && $imovel['FechaduraEletronica'] == 1): ?>
+                        <div class="feature-item"><i class="fas fa-key"></i> Fechadura Eletrônica</div>
+                    <?php endif; ?>
+
                 </div>
             </div>
 
@@ -405,9 +549,9 @@ function formatarMoeda($valor) {
 <script>
     // Função para trocar a foto principal e a foto do modal ao clicar na miniatura
     function trocarFoto(element, src) {
-        // Remove a classe ativa de todas as miniaturas
-        document.querySelectorAll('.thumb-img').forEach(img => img.classList.remove('active'));
-        // Adiciona a classe ativa na miniatura clicada
+        // Remove a classe ativa de todos os wrappers
+        document.querySelectorAll('.thumb-wrapper').forEach(wrapper => wrapper.classList.remove('active'));
+        // Adiciona a classe ativa no wrapper clicado
         element.classList.add('active');
         
         // Troca a imagem principal

@@ -3,17 +3,16 @@
 // Arquivo de configuração de manutenção do sistema
 
 /**
- * Verifica se o sistema está em modo de manutenção
- * Retorna true se o arquivo manut.txt existir
- */
-/** 11 03 2026
- * Verifica se um sistema específico está em manutenção
- * @param string $sistema_id O ID do sistema (ex: 'gabnet', 'sunny', 'todolist')
+ * Verifica se um sistema específico ou o sistema padrão está em manutenção
+ * @param string|null $sistema_id O ID do sistema (ex: 'sunny', 'gabnet') ou null para o padrão
  * @return bool Retorna true se o arquivo de manutenção existir
  */
-function EstaEmManutencao($sistema_id) {
-    // Busca na pasta /manut/ na raiz do servidor o arquivo correspondente ao ID
-    $arquivoManutencao = $_SERVER['DOCUMENT_ROOT'] . "/manut/manut_{$sistema_id}.txt";
+function EstaEmManutencao($sistema_id = null) {
+    if ($sistema_id) {
+        $arquivoManutencao = $_SERVER['DOCUMENT_ROOT'] . "/manut/manut_{$sistema_id}.txt";
+    } else {
+        $arquivoManutencao = dirname(__FILE__) . "/manut.txt";
+    }
     
     return file_exists($arquivoManutencao);
 }
@@ -23,8 +22,7 @@ function EstaEmManutencao($sistema_id) {
  * Retorna true se o usuário for "barreto" (case-insensitive)
  */
 function EAdmin() {
-
-    return (isset($_SESSION['Usuario']) && strtolower(Lower($_SESSION['Usuario'])) == "barreto");
+    return (isset($_SESSION['Usuario']) && strtolower(trim($_SESSION['Usuario'])) === "barreto");
 }
 
 /**
@@ -39,9 +37,10 @@ function DiretorioVendasBloqueado() {
 /**
  * Redireciona para página de manutenção se necessário
  * Deve ser chamada no início de cada página que precise verificar manutenção
+ * @param string|null $sistema_id
  */
-function VerificarManutencao() {
-    if (EstaEmManutencao() && !EAdmin()) {
+function VerificarManutencao($sistema_id = null) {
+    if (EstaEmManutencao($sistema_id) && !EAdmin()) {
         $script_name = $_SERVER['SCRIPT_NAME'];
         $basename = basename($script_name);
         
@@ -54,28 +53,31 @@ function VerificarManutencao() {
 
 /**
  * Verifica e exibe mensagem se vendas estão bloqueadas
- * Deve ser chamada onde for necessário mostrar o bloqueio
  */
 function VerificarVendasBloqueadas() {
-    if (DiretorioVendasBloqueado()) {
-        return true; // Vendas bloqueadas
-    }
-    return false; // Vendas liberadas
+    return DiretorioVendasBloqueado();
 }
 
 /**
  * Cria arquivo de manutenção
  * @param bool $ativar - true para ativar, false para desativar manutenção
+ * @param string|null $sistema_id
  */
-function ControlarManutencao($ativar = true) {
-    $arquivoManutencao = dirname(__FILE__) . "/manut.txt";
+function ControlarManutencao($ativar = true, $sistema_id = null) {
+    if ($sistema_id) {
+        $pastaManut = $_SERVER['DOCUMENT_ROOT'] . "/manut/";
+        if (!is_dir($pastaManut)) {
+            mkdir($pastaManut, 0755, true);
+        }
+        $arquivoManutencao = $pastaManut . "manut_{$sistema_id}.txt";
+    } else {
+        $arquivoManutencao = dirname(__FILE__) . "/manut.txt";
+    }
     
     if ($ativar) {
-        // Criar arquivo de manutenção
         file_put_contents($arquivoManutencao, "Sistema em manutenção - " . date('d/m/Y H:i:s'));
         return true;
     } else {
-        // Remover arquivo de manutenção
         if (file_exists($arquivoManutencao)) {
             unlink($arquivoManutencao);
         }
@@ -91,11 +93,9 @@ function ControlarVendas($bloquear = true) {
     $arquivoBloqueio = dirname(__FILE__) . "/DIRETORIAS_VENDAS.TXT";
     
     if ($bloquear) {
-        // Criar arquivo de bloqueio
         file_put_contents($arquivoBloqueio, "Vendas bloqueadas - " . date('d/m/Y H:i:s'));
         return true;
     } else {
-        // Remover arquivo de bloqueio
         if (file_exists($arquivoBloqueio)) {
             unlink($arquivoBloqueio);
         }
@@ -105,11 +105,12 @@ function ControlarVendas($bloquear = true) {
 
 /**
  * Retorna status do sistema
+ * @param string|null $sistema_id
  * @return array Array com status do sistema
  */
-function StatusSistema() {
+function StatusSistema($sistema_id = null) {
     return [
-        'manutencao' => EstaEmManutencao(),
+        'manutencao' => EstaEmManutencao($sistema_id),
         'admin' => EAdmin(),
         'vendas_bloqueadas' => DiretorioVendasBloqueado(),
         'data_hora' => date('d/m/Y H:i:s'),

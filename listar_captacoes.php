@@ -36,112 +36,22 @@ function getBaseUrl() {
     return $protocol . '://' . $host . $scriptDir . '/';
 }
 
-function normalizeFotoUrl($foto) {
-    $placeholder = 'https://placehold.co/600x400/e2e8f0/64748b?text=Sem+Foto';
-    if (empty($foto)) return $placeholder;
-
-    $foto = trim($foto);
-    if ($foto === '') return $placeholder;
-
-    if (preg_match('#^https?://#i', $foto)) return $foto;
-
-    // Normaliza separadores e corrige caso o banco tenha salvo "captacao" no singular
-    $foto = str_replace('\\', '/', $foto);
-    $foto = str_replace('captacao/', 'captacoes/', $foto);
-
-    $dirReal = str_replace('\\', '/', __DIR__);
-    if (strpos($foto, $dirReal) === 0) {
-        $foto = ltrim(substr($foto, strlen($dirReal)), '/');
+function deletarPastaRecursiva($dir) {
+    if (!is_dir($dir)) return;
+    $itens = array_diff(scandir($dir), array('.', '..'));
+    foreach ($itens as $item) {
+        $caminho = $dir . '/' . $item;
+        if (is_dir($caminho)) { deletarPastaRecursiva($caminho); } 
+        else { @chmod($caminho, 0777); @unlink($caminho); }
     }
-
-    while (strpos($foto, './') === 0) {
-        $foto = substr($foto, 2);
-    }
-
-    if (strpos($foto, '/') === 0) {
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host     = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        return $protocol . '://' . $host . $foto;
-    }
-
-    return getBaseUrl() . $foto;
+    @chmod($dir, 0777); @rmdir($dir);
 }
 
-function uploadFotos($files, $imovelId) {
-    // CORRIGIDO PARA O PLURAL: captacoes
-    $pastaDestino = __DIR__ . '/captacoes/' . $imovelId . '/';
-    
-    if (!is_dir($pastaDestino)) { 
-        if (!@mkdir($pastaDestino, 0777, true)) {
-            throw new Exception("Não foi possível criar a pasta de destino: $pastaDestino");
-        }
-    }
-    
-    if (!is_writable($pastaDestino)) {
-        throw new Exception("A pasta não tem permissão de escrita: $pastaDestino");
-    }
-
-    $caminhos = [];
-    $limite = min(count($files['name']), 10);
-    $permitidas = ['jpg', 'jpeg', 'png', 'webp'];
-
-    for ($i = 0; $i < $limite; $i++) {
-        if ($files['error'][$i] !== UPLOAD_ERR_OK) continue;
-
-        $extensao = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION));
-        if (!in_array($extensao, $permitidas, true)) continue;
-
-        $novoNome = uniqid() . '.' . $extensao;
-        if (move_uploaded_file($files['tmp_name'][$i], $pastaDestino . $novoNome)) {
-            // CORRIGIDO PARA O PLURAL: captacoes
-            $caminhos[] = 'captacoes/' . $imovelId . '/' . $novoNome;
-        }
-    }
-    return $caminhos;
-}
-
-function limparMoeda($valor) {
-    if (empty($valor)) return null;
-    $valorLimpo = str_replace(['R$', '.', ' '], '', $valor);
-    $valorLimpo = str_replace(',', '.', $valorLimpo);
-    return (float) $valorLimpo;
-}
-
-function formatarInputMoeda($valor) {
-    if (!$valor) return '';
-    return number_format($valor, 2, ',', '.');
-}
-
-/**
- * BUSCA AS FOTOS NO BANCO E TAMBÉM FISICAMENTE NA PASTA
- */
-function getArrayFotos($linkFicha, $imovelId = null) {
+function getArrayFotos($imovelId) {
     $placeholder = 'https://placehold.co/600x400/e2e8f0/64748b?text=Sem+Foto';
     $normalizadas = [];
 
-    // 1. Tenta pegar do Banco de Dados (LinkFicha)
-    if (!empty($linkFicha)) {
-        $fotos = json_decode($linkFicha, true);
-        if (!is_array($fotos)) {
-            $fotos = [$linkFicha];
-        }
-
-        foreach ($fotos as $foto) {
-            if (is_array($foto)) {
-                $foto = $foto['url'] ?? $foto['caminho'] ?? $foto['foto'] ?? '';
-            }
-            if (!empty($foto) && is_string($foto)) {
-                // Verifica se o arquivo realmente existe para não quebrar a imagem
-                $caminhoFisico = __DIR__ . '/' . ltrim(str_replace('captacao/', 'captacoes/', $foto), '/');
-                if (file_exists($caminhoFisico)) {
-                    $normalizadas[] = normalizeFotoUrl($foto);
-                }
-            }
-        }
-    }
-
-    // 2. Se não achou nada no banco (ou se o arquivo não existe), VAI NA PASTA FÍSICA
-    if (empty($normalizadas) && $imovelId) {
+    if ($imovelId) {
         $pastaFisica = __DIR__ . '/captacoes/' . $imovelId . '/';
         if (is_dir($pastaFisica)) {
             $arquivos = scandir($pastaFisica);
@@ -159,15 +69,79 @@ function getArrayFotos($linkFicha, $imovelId = null) {
     return count($normalizadas) > 0 ? $normalizadas : [$placeholder];
 }
 
+function validarArquivos($files) {
+    $permitidas = ['jpg', 'jpeg', 'png', 'webp'];
+    $videos = ['mp4', 'mov', 'avi', 'mkv', 'webm', '3gp', 'flv', 'wmv', 'mpg', 'mpeg'];
+    
+    $limite = count($files['name']);
+    for ($i = 0; $i < $limite; $i++) {
+        if ($files['error'][$i] !== UPLOAD_ERR_OK) continue;
+        
+        $nome = $files['name'][$i];
+        $extensao = strtolower(pathinfo($nome, PATHINFO_EXTENSION));
+        
+        if (in_array($extensao, $videos)) {
+            throw new Exception("O arquivo <strong>$nome</strong> é um vídeo. Não é permitido enviar vídeos no campo de fotos. Utilize o campo <em>Link do Vídeo</em> na aba <em>Links / Localização</em>.");
+        }
+        if (!in_array($extensao, $permitidas)) {
+            throw new Exception("O arquivo <strong>$nome</strong> não é uma imagem válida. Envie apenas imagens (JPG, JPEG, PNG, WEBP).");
+        }
+    }
+}
+
+function uploadFotos($files, $imovelId) {
+    $pastaDestino = __DIR__ . '/captacoes/' . $imovelId . '/';
+    
+    if (!is_dir($pastaDestino)) { 
+        if (!@mkdir($pastaDestino, 0777, true)) {
+            throw new Exception("Não foi possível criar a pasta de destino: $pastaDestino");
+        }
+    }
+    
+    if (!is_writable($pastaDestino)) {
+        throw new Exception("A pasta não tem permissão de escrita: $pastaDestino");
+    }
+
+    $limite = min(count($files['name']), 10);
+    $permitidas = ['jpg', 'jpeg', 'png', 'webp'];
+
+    for ($i = 0; $i < $limite; $i++) {
+        if ($files['error'][$i] !== UPLOAD_ERR_OK) continue;
+
+        $extensao = strtolower(pathinfo($files['name'][$i], PATHINFO_EXTENSION));
+        if (!in_array($extensao, $permitidas, true)) continue;
+
+        $novoNome = uniqid() . '.' . $extensao;
+        move_uploaded_file($files['tmp_name'][$i], $pastaDestino . $novoNome);
+    }
+}
+
+function limparMoeda($valor) {
+    if (empty($valor)) return null;
+    $valorLimpo = str_replace(['R$', '.', ' '], '', $valor);
+    $valorLimpo = str_replace(',', '.', $valorLimpo);
+    return (float) $valorLimpo;
+}
+
+function formatarInputMoeda($valor) {
+    if (!$valor) return '';
+    return number_format($valor, 2, ',', '.');
+}
+
 // ============================================================
 // PROCESSAMENTO DE AÇÕES (POST)
 // ============================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['excluir_id'])) {
+        $excluirId = $_POST['excluir_id'];
         try {
+            $pastaFotos = __DIR__ . '/captacoes/' . $excluirId . '/';
+            deletarPastaRecursiva($pastaFotos);
+
             $stmt = $db->prepare("DELETE FROM empreendimento WHERE Empreend_ID = ? AND Origem = 'CAPTACAO' AND Empresa_ID = ?");
-            $stmt->execute([$_POST['excluir_id'], $empresaId]);
-            $mensagem = "Captação excluída com sucesso!";
+            $stmt->execute([$excluirId, $empresaId]);
+            
+            $mensagem = "Captação e suas fotos excluídas com sucesso!";
             $acao = 'listar';
         } catch (PDOException $e) {
             $mensagem = "Erro ao excluir: " . $e->getMessage(); $tipoMsg = "danger";
@@ -214,10 +188,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             'Latitude' => trim($_POST['Latitude'] ?? ''),
             'Longitude' => trim($_POST['Longitude'] ?? ''),
-            'LinkVideo' => trim($_POST['LinkVideo'] ?? '')
+            'LinkVideo' => trim($_POST['LinkVideo'] ?? ''),
+
+            // CARACTERÍSTICAS 1 (Lazer)
+            'BeiraMar' => isset($_POST['BeiraMar']) ? 1 : 0,
+            'RoofTop' => isset($_POST['RoofTop']) ? 1 : 0,
+            'Piscina2' => isset($_POST['Piscina2']) ? 1 : 0,
+            'PiscinaPrivativa' => isset($_POST['PiscinaPrivativa']) ? 1 : 0,
+            'Academia' => isset($_POST['Academia']) ? 1 : 0,
+            'Sauna' => isset($_POST['Sauna']) ? 1 : 0,
+            'Spa' => isset($_POST['Spa']) ? 1 : 0,
+            'Hidromassagem' => isset($_POST['Hidromassagem']) ? 1 : 0,
+            'QuadraTenis' => isset($_POST['QuadraTenis']) ? 1 : 0,
+            'EspacoGourmet' => isset($_POST['EspacoGourmet']) ? 1 : 0,
+            'VarandaGourmet' => isset($_POST['VarandaGourmet']) ? 1 : 0,
+            'Varanda' => isset($_POST['Varanda']) ? 1 : 0,
+            'LoungeBar' => isset($_POST['LoungeBar']) ? 1 : 0,
+            'Restaurante' => isset($_POST['Restaurante']) ? 1 : 0,
+            'Piscina' => trim($_POST['Piscina'] ?? ''), // Campo texto varchar
+            'TipoPiscina' => trim($_POST['TipoPiscina'] ?? ''),
+
+            // CARACTERÍSTICAS 2 (Serviços e Estrutura)
+            'PetPlace' => isset($_POST['PetPlace']) ? 1 : 0,
+            'Coworking' => isset($_POST['Coworking']) ? 1 : 0,
+            'Emporio' => isset($_POST['Emporio']) ? 1 : 0,
+            'Recepcao24h' => isset($_POST['Recepcao24h']) ? 1 : 0,
+            'Brinquedoteca' => isset($_POST['Brinquedoteca']) ? 1 : 0,
+            'Salaojogos' => isset($_POST['Salaojogos']) ? 1 : 0,
+            'Lavanderia' => isset($_POST['Lavanderia']) ? 1 : 0,
+            'Bicicletario' => isset($_POST['Bicicletario']) ? 1 : 0,
+            'GasEncanado' => isset($_POST['GasEncanado']) ? 1 : 0,
+            'FechaduraEletronica' => isset($_POST['FechaduraEletronica']) ? 1 : 0,
+            'GestoraAluguel' => isset($_POST['GestoraAluguel']) ? 1 : 0,
+            'Carteira' => isset($_POST['Carteira']) ? 1 : 0,
+            'Vendido' => isset($_POST['Vendido']) ? 1 : 0,
+            'Entregue' => isset($_POST['Entregue']) ? 1 : 0
         ];
 
         try {
+            if (!empty($_FILES['fotos']['name'][0])) {
+                validarArquivos($_FILES['fotos']);
+            }
+
             if (empty($_POST['Empreend_ID'])) {
                 $sql = "INSERT INTO empreendimento (Empresa_ID, Usuario_ID, NomeEmpresa, Origem, is_teste, " . implode(', ', array_keys($dados)) . ", DataCadastro, UsuarioCad) 
                         VALUES (?, ?, ?, 'CAPTACAO', 0, " . rtrim(str_repeat('?, ', count($dados)), ', ') . ", NOW(), ?)";
@@ -238,17 +250,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if (!empty($_FILES['fotos']['name'][0])) {
-                $novasFotos = uploadFotos($_FILES['fotos'], $id);
-                if (!empty($novasFotos)) {
-                    $stmtFotos = $db->prepare("SELECT LinkFicha FROM empreendimento WHERE Empreend_ID = ?");
-                    $stmtFotos->execute([$id]);
-                    $fotosAntigas = json_decode($stmtFotos->fetchColumn(), true) ?: [];
-                    $todasAsFotos = array_slice(array_merge($fotosAntigas, $novasFotos), 0, 10);
-                    
-                    $stmtFotosUpd = $db->prepare("UPDATE empreendimento SET LinkFicha = ? WHERE Empreend_ID = ?");
-                    $stmtFotosUpd->execute([json_encode($todasAsFotos), $id]);
-                }
+                uploadFotos($_FILES['fotos'], $id);
             }
+            
             $acao = 'listar';
         } catch (Exception $e) {
             $mensagem = "Erro ao salvar: " . $e->getMessage(); $tipoMsg = "danger";
@@ -340,8 +344,10 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
         .property-title { font-size: 1rem; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .property-location { font-size: 0.85rem; color: #64748b; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 5px; }
         .property-captador { font-size: 0.8rem; color: #64748b; margin-bottom: 1rem; display: flex; align-items: center; gap: 5px; font-weight: 500; }
-        .property-features { display: flex; gap: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem; margin-top: auto; font-size: 0.85rem; }
-        .property-features i { color: var(--primary); }
+        
+        /* ATUALIZADO: flex-wrap para os ícones não quebrarem o layout */
+        .property-features { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem; margin-top: auto; font-size: 0.85rem; color: #475569; font-weight: 600; }
+        .property-features i { color: var(--primary); margin-right: 2px; }
 
         /* Formulário */
         .card-neo { background: #fff; border: 3px solid var(--shadow-color); border-radius: 16px; box-shadow: 6px 6px 0 0 var(--shadow-color); overflow: hidden; margin-bottom: 2rem; }
@@ -356,15 +362,19 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
         .btn-neo.success { background: var(--success); color: #fff; }
         .btn-neo.danger { background: var(--danger); color: #fff; }
         .btn-neo.secondary { background: #fff; color: #1a1a2e; }
-        .btn-neo.sm { padding: 4px 10px; font-size: 0.7rem; }
         
-        .nav-tabs { border-bottom: 3px solid var(--shadow-color); gap: 4px; }
-        .nav-tabs .nav-link { border: 2.5px solid transparent; border-bottom: none; border-radius: 10px 10px 0 0; font-weight: 800; font-size: 0.85rem; color: #6b7280; padding: 8px 16px; margin-bottom: -3px; }
+        .nav-tabs { border-bottom: 3px solid var(--shadow-color); gap: 4px; flex-wrap: wrap; }
+        .nav-tabs .nav-link { border: 2.5px solid transparent; border-bottom: none; border-radius: 10px 10px 0 0; font-weight: 800; font-size: 0.8rem; color: #6b7280; padding: 8px 12px; margin-bottom: -3px; }
         .nav-tabs .nav-link.active { background: #fff; border-color: var(--shadow-color); border-bottom: 3px solid #fff; color: var(--primary); box-shadow: 0 -3px 0 var(--shadow-color); }
         
         .alert-neo { border: 3px solid; border-radius: 12px; padding: 1rem; font-weight: 700; margin-bottom: 1.5rem; box-shadow: 4px 4px 0; }
         .alert-neo.success { background: #d1fae5; color: #065f46; border-color: #065f46; }
         .alert-neo.danger { background: #fee2e2; color: #991b1b; border-color: #991b1b; }
+
+        /* Ajustes nos checkboxes (switches) */
+        .form-check-input { width: 2.5em; height: 1.25em; border: 2px solid var(--shadow-color); cursor: pointer; }
+        .form-check-input:checked { background-color: var(--primary); border-color: var(--shadow-color); }
+        .form-check-label { font-weight: 600; font-size: 0.9rem; cursor: pointer; padding-top: 2px; }
 
         /* ESTILOS MOBILE */
         @media (max-width: 767.98px) {
@@ -432,8 +442,7 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
         <?php if (count($imoveis) > 0): ?>
             <div class="row g-4">
                 <?php foreach ($imoveis as $imovel): 
-                    // Passa o ID para a função buscar na pasta física!
-                    $fotos = getArrayFotos($imovel['LinkFicha'], $imovel['Empreend_ID']);
+                    $fotos = getArrayFotos($imovel['Empreend_ID']);
                     $qtdFotos = count($fotos);
                     $preco = $imovel['ValorDesejado'] ?? $imovel['ValorMercado'] ?? null;
                     $isTeste = isset($imovel['is_teste']) && $imovel['is_teste'] == 1;
@@ -473,10 +482,45 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
                                 </div>
                             <?php endif; ?>
 
+                            <!-- EXIBIÇÃO DAS CARACTERÍSTICAS NO CARD -->
                             <div class="property-features mb-3">
-                                <?php if (!empty($imovel['MetragemTotal'])): ?><span><i class="fas fa-ruler-combined"></i> <?= number_format($imovel['MetragemTotal'], 0, ',', '.') ?> m²</span><?php endif; ?>
-                                <?php if (!empty($imovel['Quartos'])): ?><span><i class="fas fa-bed"></i> <?= htmlspecialchars($imovel['Quartos']) ?> Qts</span><?php endif; ?>
-                                <?php if (!empty($imovel['WCTotal'])): ?><span><i class="fas fa-bath"></i> <?= htmlspecialchars($imovel['WCTotal']) ?> WC</span><?php endif; ?>
+                                <?php if (!empty($imovel['MetragemTotal'])): ?>
+                                    <span><i class="fas fa-ruler-combined"></i> <?= number_format($imovel['MetragemTotal'], 0, ',', '.') ?> m²</span>
+                                <?php endif; ?>
+                                <?php if (!empty($imovel['Quartos'])): ?>
+                                    <span><i class="fas fa-bed"></i> <?= htmlspecialchars($imovel['Quartos']) ?> Qts</span>
+                                <?php endif; ?>
+                                <?php if (!empty($imovel['WCTotal'])): ?>
+                                    <span><i class="fas fa-bath"></i> <?= htmlspecialchars($imovel['WCTotal']) ?> WC</span>
+                                <?php endif; ?>
+                                <?php if (!empty($imovel['VagasGaragem'])): ?>
+                                    <span><i class="fas fa-car"></i> <?= htmlspecialchars($imovel['VagasGaragem']) ?> Vgs</span>
+                                <?php endif; ?>
+
+                                <?php if (!empty($imovel['BeiraMar']) && $imovel['BeiraMar'] == 1): ?>
+                                    <span title="Beira Mar"><i class="fas fa-water"></i></span>
+                                <?php endif; ?>
+                                <?php if (!empty($imovel['Piscina2']) && $imovel['Piscina2'] == 1): ?>
+                                    <span title="Piscina"><i class="fas fa-swimming-pool"></i></span>
+                                <?php endif; ?>
+                                <?php if (!empty($imovel['Academia']) && $imovel['Academia'] == 1): ?>
+                                    <span title="Academia"><i class="fas fa-dumbbell"></i></span>
+                                <?php endif; ?>
+                                <?php if (!empty($imovel['EspacoGourmet']) && $imovel['EspacoGourmet'] == 1): ?>
+                                    <span title="Espaço Gourmet"><i class="fas fa-utensils"></i></span>
+                                <?php endif; ?>
+                                <?php if (!empty($imovel['PetPlace']) && $imovel['PetPlace'] == 1): ?>
+                                    <span title="Pet Place"><i class="fas fa-paw"></i></span>
+                                <?php endif; ?>
+                                <?php if (!empty($imovel['Sauna']) && $imovel['Sauna'] == 1): ?>
+                                    <span title="Sauna"><i class="fas fa-hot-tub"></i></span>
+                                <?php endif; ?>
+                                <?php if (!empty($imovel['Coworking']) && $imovel['Coworking'] == 1): ?>
+                                    <span title="Coworking"><i class="fas fa-laptop-house"></i></span>
+                                <?php endif; ?>
+                                <?php if (!empty($imovel['PossuiElevador']) && $imovel['PossuiElevador'] == 1): ?>
+                                    <span title="Elevador"><i class="fas fa-arrows-alt-v"></i></span>
+                                <?php endif; ?>
                             </div>
 
                             <?php if ($temMapa || $temVideo): ?>
@@ -500,7 +544,9 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
                             
                             <div class="d-flex gap-2 border-top pt-3 mt-auto">
                                 <a href="listar_captacoes.php?acao=editar&id=<?= $imovel['Empreend_ID'] ?>" class="btn btn-warning btn-sm w-50 fw-bold text-dark"><i class="fas fa-edit"></i> Editar</a>
-                                <form method="POST" class="w-50" onsubmit="return confirm('Excluir esta captação?');">
+                              <a href="detalhe_captacao.php?id=<?= $imovel['Empreend_ID'] ?>" target="_blank" class="btn btn-success btn-sm w-50 fw-bold text-white"><i class="fas fa-edit"></i> Visualizar</a>
+
+                                <form method="POST" class="w-50" onsubmit="return confirm('Excluir esta captação e suas fotos?');">
                                     <input type="hidden" name="excluir_id" value="<?= $imovel['Empreend_ID'] ?>">
                                     <button type="submit" class="btn btn-danger btn-sm w-100 fw-bold"><i class="fas fa-trash"></i> Excluir</button>
                                 </form>
@@ -534,7 +580,17 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
         
         <div class="card-neo">
             <div class="card-header">
-                <span><i class="fas fa-home"></i> <?= $acao === 'editar' ? 'Editar Captação #' . $id : 'Nova Captação' ?></span>
+                <span>
+                    <i class="fas fa-home"></i> 
+                    <?php 
+                    if ($acao === 'editar') {
+                        $nomeImovelTitulo = !empty($dadosEdicao['NomeEmpreendimento']) ? ' - ' . htmlspecialchars($dadosEdicao['NomeEmpreendimento']) : '';
+                        echo 'Editar Captação #' . $id . $nomeImovelTitulo;
+                    } else {
+                        echo 'Nova Captação';
+                    }
+                    ?>
+                </span>
             </div>
             <div class="card-body p-4">
                 <form method="POST" enctype="multipart/form-data" id="formCaptacao">
@@ -543,6 +599,8 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
 
                     <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
                         <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-imovel" type="button">Imóvel</button></li>
+                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-carac1" type="button">Características 1</button></li>
+                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-carac2" type="button">Características 2</button></li>
                         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-proprietario" type="button">Proprietário / Captador</button></li>
                         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-valores" type="button">Valores</button></li>
                         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-links" type="button">Links / Localização</button></li>
@@ -550,7 +608,7 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
                     </ul>
 
                     <div class="tab-content" id="myTabContent">
-                        <!-- ABA 1 -->
+                        <!-- ABA 1: IMÓVEL -->
                         <div class="tab-pane fade show active" id="tab-imovel">
                             <div class="row g-3">
                                 <div class="col-md-6">
@@ -625,15 +683,212 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
                                     </select>
                                 </div>
                                 <div class="col-md-3 d-flex align-items-end">
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="checkbox" name="PossuiElevador" value="1" <?= !empty($dadosEdicao['PossuiElevador']) ? 'checked' : '' ?>>
-                                        <label class="form-check-label fw-bold">Possui Elevador</label>
+                                    <div class="form-check form-switch mb-2">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="PossuiElevador" value="1" id="PossuiElevador" <?= !empty($dadosEdicao['PossuiElevador']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="PossuiElevador">Possui Elevador</label>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- ABA 2 -->
+                        <!-- ABA CARACTERÍSTICAS 1 (LAZER E BEM ESTAR) -->
+                        <div class="tab-pane fade" id="tab-carac1">
+                            <h6 class="fw-bold text-muted mb-3 border-bottom pb-2">LAZER E BEM-ESTAR</h6>
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="BeiraMar" value="1" id="BeiraMar" <?= !empty($dadosEdicao['BeiraMar']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="BeiraMar">Beira Mar</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="RoofTop" value="1" id="RoofTop" <?= !empty($dadosEdicao['RoofTop']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="RoofTop">RoofTop</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Piscina2" value="1" id="Piscina2" <?= !empty($dadosEdicao['Piscina2']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Piscina2">Piscina</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="PiscinaPrivativa" value="1" id="PiscinaPrivativa" <?= !empty($dadosEdicao['PiscinaPrivativa']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="PiscinaPrivativa">Piscina Privativa</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Academia" value="1" id="Academia" <?= !empty($dadosEdicao['Academia']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Academia">Academia</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Sauna" value="1" id="Sauna" <?= !empty($dadosEdicao['Sauna']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Sauna">Sauna</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Spa" value="1" id="Spa" <?= !empty($dadosEdicao['Spa']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Spa">Spa</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Hidromassagem" value="1" id="Hidromassagem" <?= !empty($dadosEdicao['Hidromassagem']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Hidromassagem">Hidromassagem</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="QuadraTenis" value="1" id="QuadraTenis" <?= !empty($dadosEdicao['QuadraTenis']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="QuadraTenis">Quadra de Tênis</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="EspacoGourmet" value="1" id="EspacoGourmet" <?= !empty($dadosEdicao['EspacoGourmet']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="EspacoGourmet">Espaço Gourmet</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="VarandaGourmet" value="1" id="VarandaGourmet" <?= !empty($dadosEdicao['VarandaGourmet']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="VarandaGourmet">Varanda Gourmet</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Varanda" value="1" id="Varanda" <?= !empty($dadosEdicao['Varanda']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Varanda">Varanda</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="LoungeBar" value="1" id="LoungeBar" <?= !empty($dadosEdicao['LoungeBar']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="LoungeBar">Lounge Bar</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Restaurante" value="1" id="Restaurante" <?= !empty($dadosEdicao['Restaurante']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Restaurante">Restaurante</label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row g-3 mt-2">
+                                <div class="col-md-6">
+                                    <label class="field-label">Tipo de Piscina</label>
+                                    <input type="text" class="form-control" name="TipoPiscina" value="<?= htmlspecialchars($dadosEdicao['TipoPiscina'] ?? '') ?>" placeholder="Ex: Adulto e Infantil, Raia, Borda Infinita...">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="field-label">Piscina (Descrição Adicional)</label>
+                                    <input type="text" class="form-control" name="Piscina" value="<?= htmlspecialchars($dadosEdicao['Piscina'] ?? '') ?>" placeholder="Ex: Aquecida, com Deck, etc...">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ABA CARACTERÍSTICAS 2 (SERVIÇOS E ESTRUTURA) -->
+                        <div class="tab-pane fade" id="tab-carac2">
+                            <h6 class="fw-bold text-muted mb-3 border-bottom pb-2">SERVIÇOS E ESTRUTURA</h6>
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="PetPlace" value="1" id="PetPlace" <?= !empty($dadosEdicao['PetPlace']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="PetPlace">Pet Place</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Coworking" value="1" id="Coworking" <?= !empty($dadosEdicao['Coworking']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Coworking">Coworking</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Emporio" value="1" id="Emporio" <?= !empty($dadosEdicao['Emporio']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Emporio">Empório</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Recepcao24h" value="1" id="Recepcao24h" <?= !empty($dadosEdicao['Recepcao24h']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Recepcao24h">Recepção 24h</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Brinquedoteca" value="1" id="Brinquedoteca" <?= !empty($dadosEdicao['Brinquedoteca']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Brinquedoteca">Brinquedoteca</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Salaojogos" value="1" id="Salaojogos" <?= !empty($dadosEdicao['Salaojogos']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Salaojogos">Sala de Jogos</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Lavanderia" value="1" id="Lavanderia" <?= !empty($dadosEdicao['Lavanderia']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Lavanderia">Lavanderia</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Bicicletario" value="1" id="Bicicletario" <?= !empty($dadosEdicao['Bicicletario']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Bicicletario">Bicicletário</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="GasEncanado" value="1" id="GasEncanado" <?= !empty($dadosEdicao['GasEncanado']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="GasEncanado">Gás Encanado</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="FechaduraEletronica" value="1" id="FechaduraEletronica" <?= !empty($dadosEdicao['FechaduraEletronica']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="FechaduraEletronica">Fechadura Eletrônica</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <h6 class="fw-bold text-muted mb-3 border-bottom pb-2 mt-4">STATUS E GESTÃO (USO INTERNO)</h6>
+                            <div class="row g-3">
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="GestoraAluguel" value="1" id="GestoraAluguel" <?= !empty($dadosEdicao['GestoraAluguel']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="GestoraAluguel">Gestora de Aluguel</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Carteira" value="1" id="Carteira" <?= !empty($dadosEdicao['Carteira']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Carteira">Na Carteira</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Vendido" value="1" id="Vendido" <?= !empty($dadosEdicao['Vendido']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Vendido">Vendido</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 col-lg-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Entregue" value="1" id="Entregue" <?= !empty($dadosEdicao['Entregue']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Entregue">Entregue</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ABA PROPRIETÁRIO -->
                         <div class="tab-pane fade" id="tab-proprietario">
                             <h6 class="fw-bold text-muted mb-3 border-bottom pb-2">DADOS DO PROPRIETÁRIO</h6>
                             <div class="row g-3 mb-4">
@@ -647,15 +902,15 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
                                 <div class="col-md-4"><label class="field-label">Telefone</label><input type="text" class="form-control" name="CaptadorTelefone" value="<?= htmlspecialchars($dadosEdicao['CaptadorTelefone'] ?? '') ?>"></div>
                                 <div class="col-md-2"><label class="field-label">% Captador</label><input type="number" step="0.01" class="form-control" name="PercentualCaptador" value="<?= htmlspecialchars($dadosEdicao['PercentualCaptador'] ?? '') ?>"></div>
                                 <div class="col-md-2 d-flex align-items-end">
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="checkbox" name="Exclusividade" value="1" <?= !empty($dadosEdicao['Exclusividade']) ? 'checked' : '' ?>>
-                                        <label class="form-check-label fw-bold">Exclusividade</label>
+                                    <div class="form-check form-switch mb-2">
+                                        <input class="form-check-input" type="checkbox" role="switch" name="Exclusividade" value="1" id="Exclusividade" <?= !empty($dadosEdicao['Exclusividade']) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="Exclusividade">Exclusividade</label>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- ABA 3 -->
+                        <!-- ABA VALORES -->
                         <div class="tab-pane fade" id="tab-valores">
                             <div class="row g-3">
                                 <div class="col-md-4">
@@ -693,7 +948,7 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
                             </div>
                         </div>
 
-                        <!-- ABA 4: LINKS E LOCALIZAÇÃO -->
+                        <!-- ABA LINKS -->
                         <div class="tab-pane fade" id="tab-links">
                             <div class="row g-3">
                                 <div class="col-md-6">
@@ -725,7 +980,7 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
                             </div>
                         </div>
 
-                        <!-- ABA 5 -->
+                        <!-- ABA FOTOS -->
                         <div class="tab-pane fade" id="tab-fotos">
                             <div class="row g-3 mb-4">
                                 <div class="col-md-6"><label class="field-label text-success">Ponto Forte</label><textarea class="form-control" name="PontoForte" rows="3"><?= htmlspecialchars($dadosEdicao['PontoForte'] ?? '') ?></textarea></div>
@@ -734,17 +989,29 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
                                 <div class="col-md-6"><label class="field-label">Observações Internas</label><textarea class="form-control" name="Obs" rows="3"><?= htmlspecialchars($dadosEdicao['Obs'] ?? '') ?></textarea></div>
                             </div>
                             <div class="border-top pt-4">
-                                <label class="field-label mb-2"><i class="fas fa-images"></i> Fotos do Imóvel (Máx 10)</label>
-                                <input class="form-control" type="file" name="fotos[]" multiple accept="image/*">
-                                <?php if (!empty($dadosEdicao['LinkFicha']) || $dadosEdicao): 
-                                    $fotosEdicao = getArrayFotos($dadosEdicao['LinkFicha'] ?? null, $dadosEdicao['Empreend_ID'] ?? null);
+                                <label class="field-label mb-2"><i class="fas fa-images"></i> Adicionar Fotos (Máx 10 por envio)</label>
+                                <input class="form-control" type="file" name="fotos[]" multiple accept="image/*" id="inputFotos" onchange="validarFotosInput(this)">
+                                <small class="text-muted d-block mt-1">Formatos aceitos: JPG, JPEG, PNG, WEBP. Vídeos devem ser adicionados na aba "Links / Localização".</small>
+                                
+                                <?php 
+                                    $fotosEdicao = getArrayFotos($dadosEdicao['Empreend_ID'] ?? null);
                                     if (count($fotosEdicao) > 0 && strpos($fotosEdicao[0], 'placehold') === false): ?>
-                                    <div class="mt-3 d-flex flex-wrap gap-2">
-                                        <?php foreach ($fotosEdicao as $foto): ?>
-                                            <img src="<?= htmlspecialchars($foto) ?>" class="img-thumbnail" style="height: 80px; width: 100px; object-fit: cover; border: 2px solid #1a1a2e;" onerror="this.onerror=null; this.src='https://placehold.co/100x80?text=Erro';">
-                                        <?php endforeach; ?>
+                                    <div class="mt-4">
+                                        <p class="mb-3 text-muted small fw-bold">Fotos cadastradas na pasta (captacoes/<?= $dadosEdicao['Empreend_ID'] ?>):</p>
+                                        
+                                        <div class="d-flex flex-wrap gap-3">
+                                            <?php foreach ($fotosEdicao as $index => $foto): ?>
+                                                <div class="text-center">
+                                                    <img src="<?= htmlspecialchars($foto) ?>" class="img-thumbnail" style="height: 80px; width: 100px; object-fit: cover; border: 2px solid #1a1a2e; margin-bottom: 4px;" onerror="this.onerror=null; this.src='https://placehold.co/100x80?text=Erro';">
+                                                    <div style="font-size: 0.7rem; font-weight: 800; color: #64748b; text-transform: uppercase;">
+                                                        Foto <?= str_pad($index + 1, 2, '0', STR_PAD_LEFT) ?>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        
                                     </div>
-                                <?php endif; endif; ?>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -800,6 +1067,28 @@ function formataPreco($valor) { return $valor ? 'R$ ' . number_format($valor, 2,
             });
         }
     });
+
+    function validarFotosInput(input) {
+        const files = input.files;
+        const permitidas = ['jpg', 'jpeg', 'png', 'webp'];
+        const videos = ['mp4', 'mov', 'avi', 'mkv', 'webm', '3gp', 'flv', 'wmv', 'mpg', 'mpeg'];
+        
+        for (let i = 0; i < files.length; i++) {
+            const nome = files[i].name;
+            const ext = nome.split('.').pop().toLowerCase();
+            
+            if (videos.includes(ext)) {
+                alert(`O arquivo "${nome}" é um vídeo.\n\nNão é permitido enviar vídeos no campo de fotos. Por favor, utilize a aba "Links / Localização" para adicionar o link do vídeo.`);
+                input.value = '';
+                return;
+            }
+            if (!permitidas.includes(ext)) {
+                alert(`O arquivo "${nome}" não é uma imagem válida. Envie apenas JPG, JPEG, PNG ou WEBP.`);
+                input.value = '';
+                return;
+            }
+        }
+    }
 
     function abrirMapa() {
         const lat = document.getElementById('Latitude').value.trim();

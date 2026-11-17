@@ -27,10 +27,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $usuario = trim($_POST['usuario'] ?? '');
     $senha   = trim($_POST['senha']   ?? '');
 
-    // --- VERIFICAÇÃO DE MANUTENÇÃO APÓS SUBMISSÃO ---
-    if (file_exists($arquivo_manut)) {
+// --- VERIFICAÇÃO DE MANUTENÇÃO LOGO NO INÍCIO DO POST ---
+    // Usando o mesmo padrão do manutencao_config.php (manut.txt na raiz do projeto)
+    $arquivo_manut_padrao = __DIR__ . "/manut.txt";
+
+    if (file_exists($arquivo_manut_padrao) || file_exists($arquivo_manut)) {
         if (strtolower($usuario) !== 'barreto') {
-            header("Location: paginaManut.php");
+            header("Location: manutencao.php"); // Alinhado com o nome padrão da página que criamos
             exit;
         }
     }
