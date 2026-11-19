@@ -110,12 +110,12 @@ try {
     $stmtContagemSucesso->execute();
     $contagemSucesso = $stmtContagemSucesso->fetchAll(PDO::FETCH_ASSOC);
 
-    // Buscar os dados do histórico completo
+    // Buscar os dados do histórico completo ordenados por DataHora DESC (mais recente primeiro)
     $sqlHistorico = "SELECT h.idHistorico, h.Historico, h.IdEmpresa, h.Empresa, 
                      h.IdEmpreend, h.Empreendimento, h.IdUser, h.Usuario, h.DataHora 
                      FROM histatulog h 
                      WHERE h.Usuario IS NOT NULL AND h.Usuario <> '' 
-                     ORDER BY h.idHistorico DESC";
+                     ORDER BY h.DataHora DESC";
     $stmtHistorico = $conn->prepare($sqlHistorico);
     $stmtHistorico->execute();
     $historico = $stmtHistorico->fetchAll(PDO::FETCH_ASSOC);
@@ -263,7 +263,8 @@ try {
                 <tbody>
                     <?php foreach ($acessosPorData as $acesso): ?>
                     <tr>
-                        <td><?php echo date('d/m/Y', strtotime($acesso['DataAcesso'])); ?></td>
+                        <!-- Alterado de d/m/Y para Y-m-d -->
+                        <td><?php echo date('Y-m-d', strtotime($acesso['DataAcesso'])); ?></td>
                         <td><?php echo getDayOfWeekName($acesso['DataAcesso']); ?></td>
                         <td>
                             <span class="badge bg-primary rounded-pill"><?php echo $acesso['TotalAcessosDiarios']; ?></span>
@@ -387,9 +388,10 @@ try {
                     <?php foreach ($historico as $registro): ?>
                     <tr>
                         <td><small class="text-muted">#<?php echo $registro['idHistorico']; ?></small></td>
-                        <td>
+                        <td data-sort="<?php echo $registro['DataHora']; ?>">
                             <small>
-                                <?php echo date('d/m/Y', strtotime($registro['DataHora'])); ?><br>
+                                <!-- Alterado de d/m/Y para Y-m-d -->
+                                <?php echo date('Y-m-d', strtotime($registro['DataHora'])); ?><br>
                                 <?php echo date('H:i:s', strtotime($registro['DataHora'])); ?>
                             </small>
                         </td>
@@ -420,7 +422,8 @@ try {
             <div class="container">
                 <p class="mb-0">
                     <i class="fas fa-sun me-1"></i> Sunny System &copy; <?php echo date('Y'); ?> 
-                    | Relatório gerado em: <?php echo date('d/m/Y H:i:s'); ?>
+                    <!-- Alterado de d/m/Y para Y-m-d -->
+                    | Relatório gerado em: <?php echo date('Y-m-d H:i:s'); ?>
                 </p>
             </div>
         </footer>
@@ -491,7 +494,7 @@ try {
         // Tabela de Histórico
         $('#tabelaHistorico').DataTable({
             ...dataTableConfig,
-            "order": [[0, "desc"]],
+            "order": [[1, "desc"]],
             "pageLength": 25,
             "lengthMenu": [[10, 25, 50, 100, -1], [10, 25, 50, 100, "Todos"]],
             "columnDefs": [

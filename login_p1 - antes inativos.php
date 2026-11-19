@@ -237,7 +237,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
 
             // Define os dados do e-mail
-            $destinatario = 'valterpb@gmail.com,valterpb@hotmail.com';
+            $destinatario = 'valterpb@hotmail.com';
             $assunto = 'SI Login - '.$_SESSION['Usuario'] ;
             $mensagemHTML = "
                 <div style='background-color: #f4f4f4; padding: 20px;'>

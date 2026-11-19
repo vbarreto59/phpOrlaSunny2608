@@ -1,4 +1,5 @@
 <?php
+
 // historico_navegacao.php
 session_start();
 

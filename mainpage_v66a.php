@@ -1026,29 +1026,52 @@ body {
         </div>
 
         <?php if (strtoupper($_SESSION['Usuario']) == "BARRETO"): ?>
-        <div class="dropdown">
+<div class="dropdown">
             <button class="btn btn-menu dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                 <i class="fas fa-code"></i> Dev
             </button>
             <ul class="dropdown-menu">
+                <!-- RH e Estrutura -->
+                <li><h6 class="dropdown-header"><i class="fas fa-users"></i> RH e Estrutura</h6></li>
                 <li><a class="dropdown-item" href="usr_painel26_2.php" target="_blank"><i class="fas fa-file-alt"></i> Painel RH 2026 Novo</a></li>
                 <li><a class="dropdown-item" href="usr_listar.php" target="_blank"><i class="fas fa-file-alt"></i> RH Cad. USR</a></li>
                 <li><a class="dropdown-item" href="usr_dupe1.php" target="_blank"><i class="fas fa-file-alt"></i> RH DUPE. USR</a></li>
-                <li><a class="dropdown-item" href="rh_status_list.php" target="_blank"><i class="fas fa-file-alt"></i> RH Licença</a></li>
+                
                 <li><a class="dropdown-item" href="mapaip3.php" target="_blank"><i class="fas fa-file-alt"></i> RH Map</a></li>
                 <li><a class="dropdown-item" href="diretoria_list.php" target="_blank"><i class="fas fa-file-alt"></i> RH Diretorias</a></li>
                 <li><a class="dropdown-item" href="gerencia_list.php" target="_blank"><i class="fas fa-file-alt"></i> RH Gerencias</a></li>
+
+                <li><hr class="dropdown-divider"></li>
+
+                <!-- Logs e Auditoria -->
+
+                <li><h6 class="dropdown-header"><i class="fas fa-history"></i> Logs e Auditoria</h6></li>
+                
+                <li><a class="dropdown-item" href="log_caracteristicas_view.php" target="_blank"><i class="fas fa-cogs"></i> Log Empreed.</a></li>
                 <li><a class="dropdown-item" href="historico_list.php" target="_blank"><i class="fas fa-cogs"></i> Log Acessos</a></li>
                 <li><a class="dropdown-item" href="log_list.php" target="_blank"><i class="fas fa-cogs"></i> Log Páginas</a></li>
                 <li><a class="dropdown-item" href="log_conta_paginas.php" target="_blank"><i class="fas fa-cogs"></i> Log Páginas 2</a></li>
-                <li><a class="dropdown-item" href="manut_vendas_diretorias.php" target="_blank"><i class="fas fa-cogs"></i> Vendas Diretorias</a></li>
-                <li><a class="dropdown-item" href="manutmenu.php" target="_blank"><i class="fas fa-cogs"></i> Manutenção do Sistema</a></li>
+                <li><a class="dropdown-item" href="log_atualizar_nome_arquivo.php" target="_blank"><i class="fas fa-cogs"></i> Lor Atualiza Arquivo</a></li>
+                <li><a class="dropdown-item" href="empreend_update_pavimentos.php" target="_blank"><i class="fas fa-cogs"></i> Pavimentos</a></li>
+
+                <li><hr class="dropdown-divider"></li>
+
+                <!-- Simulação (M2) -->
+                <li><h6 class="dropdown-header"><i class="fas fa-calculator"></i> Simulação (M2)</h6></li>
                 <li><a class="dropdown-item" href="listar_simulacao.php" target="_blank"><i class="fas fa-cogs"></i> M2 Completa</a></li>
                 <li><a class="dropdown-item" href="listar_simulacao_simples.php" target="_blank"><i class="fas fa-cogs"></i> M2 Simples</a></li>
-                <li><a class="dropdown-item" href="log_atualizar_nome_arquivo.php" target="_blank"><i class="fas fa-cogs"></i> Atualiza Log</a></li>
+
+                <li><hr class="dropdown-divider"></li>
+
+                <!-- Manutenção e Empreendimentos -->
+                <li><h6 class="dropdown-header"><i class="fas fa-tools"></i> Manutenção e Empreendimentos</h6></li>
+                <li><a class="dropdown-item" href="manut_vendas_diretorias.php" target="_blank"><i class="fas fa-cogs"></i> Vendas Diretorias</a></li>
+                <li><a class="dropdown-item" href="manutmenu.php" target="_blank"><i class="fas fa-cogs"></i> Manutenção do Sistema</a></li>
                 <li><a class="dropdown-item" href="empreend_update_pavimentos.php" target="_blank"><i class="fas fa-cogs"></i> Pavimentos</a></li>
+                
             </ul>
         </div>
+
         <?php endif; ?>
     </nav>
 

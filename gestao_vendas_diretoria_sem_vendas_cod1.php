@@ -17,7 +17,7 @@ require_once "usr_acoes.php";  // suas funções de autenticação (se existir)
 
 // Enviar e-mail de acesso (fora do localhost)
 if ($_SERVER['REMOTE_ADDR'] !== '127.0.0.1' && $_SERVER['REMOTE_ADDR'] !== '::1') {
-    $to = "valterpb@gmail.com, valterpb@hotmail.com";
+    $to = "valterpb@hotmail.com";
     $subject = "SV-DIR-CORRET2-" . strtoupper($_SESSION['Usuario'] ?? 'ANÔNIMO') .
                " - " . $_SERVER['REMOTE_ADDR'] . " - " . date('d/m/Y') . " - " . date('H:i:s');
     $message = "Página Corretores. " . strtoupper($_SESSION['Usuario'] ?? 'ANÔNIMO');

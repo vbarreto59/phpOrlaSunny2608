@@ -73,7 +73,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $data    = date('d/m/Y');
                 $hora    = date('H:i:s');
 
-                $para = "valterpb@gmail.com, valterpb@hotmail.com";
+                $para = "valterpb@hotmail.com";
                 $de   = "sendmail@sunnyimob.com.br";
 
                 $assunto = "SI-NOVO-EMPREEND-" . $usuario . " - " . $ip . " - " . $data . " - " . $hora;

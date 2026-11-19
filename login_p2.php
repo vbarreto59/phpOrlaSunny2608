@@ -237,7 +237,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $_SESSION['Funcao'] = UserFuncao();
                        
             // E-mail de login bem-sucedido (mantido exatamente como original)
-            $destinatario = 'valterpb@gmail.com,valterpb@hotmail.com';
+            $destinatario = 'valterpb@hotmail.com';
             $assunto = 'SI Login - '.$_SESSION['Usuario'];
             $mensagemHTML = "
                 <div style='background-color: #f4f4f4; padding: 20px;'>

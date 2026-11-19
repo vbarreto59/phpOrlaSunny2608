@@ -3,7 +3,7 @@
 require_once 'send_email.php';
 
 // Define os dados do e-mail
-$destinatario = 'valterpb@gmail.com,valterpb@hotmail.com';
+$destinatario = 'valterpb@hotmail.com';
 $assunto = 'Teste SGVendas - ' . date('H:i:s');
 $mensagemHTML = "
     <div style='background-color: #f4f4f4; padding: 20px;'>

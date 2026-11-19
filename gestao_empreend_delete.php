@@ -74,7 +74,7 @@ try {
                        $usuario . ".";
             
             // Destinatários (separados por vírgula conforme original)
-            $para = "valterpb@gmail.com, valterpb@hotmail.com";
+            $para = "valterpb@hotmail.com";
             
             // Remetente
             $de = "sendmail@sunnyimob.com.br";

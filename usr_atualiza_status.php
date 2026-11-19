@@ -121,7 +121,7 @@ try {
     $headers = "From: sendmail@sunnyimob.com.br\r\n";
     $headers .= "MIME-Version: 1.0\r\n";
     $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-    $destinatarios = "valterpb@gmail.com, valterpb@hotmail.com";
+    $destinatarios = "valterpb@hotmail.com";
 
     if (mail($destinatarios, $assunto, $mensagemHtml, $headers)) {
         $emailStatus = "enviado com sucesso";

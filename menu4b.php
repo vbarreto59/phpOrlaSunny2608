@@ -302,6 +302,14 @@ $usuarioLogado = $_SESSION['Usuario'];
             </div>
 
             <div class="col-6 col-md-4 mb-4">
+                <a href="empreend_update_pavimentos.php" class="menu-card" target="_blank">
+                    <i class="fas fa-layer-group"></i>
+                    <h3>Pavimentos</h3>
+                    <p>QTD de Pavimentos</p>
+                </a>
+            </div>
+
+            <div class="col-6 col-md-4 mb-4">
                 <a href="empreend_update_localizacao.php" class="menu-card" target="_blank">
                     <i class="fas fa-map-marked-alt"></i>
                     <h3>Localização</h3>

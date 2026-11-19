@@ -64,7 +64,7 @@ $csrfToken = $_SESSION['csrf_carac'];
 
 // ==================== EMAIL ====================
 function enviarEmailAtualizacao($empreendimentoId, $nomeEmp, $empresa, $usuario, $alteracoes) {
-    $to = "valterpb@gmail.com, valterpb@hotmail.com";
+    $to = "valterpb@hotmail.com";
     $subject = "[SI-CARAC] " . $nomeEmp . " - ID: " . $empreendimentoId;
 
     $headers  = "From: sendmail@sunnyimob.com.br\r\n";
@@ -99,6 +99,79 @@ function enviarEmailAtualizacao($empreendimentoId, $nomeEmp, $empresa, $usuario,
     </div></body></html>';
 
     return @mail($to, $subject, $body, $headers);
+}
+
+// ==================== LOG DE AUDITORIA (MEMO) ====================
+function montarMemoAlteracoes(int $empreendimentoId, string $nomeEmp, string $empresa,
+                              string $usuario, array $alteracoes): string
+{
+    $linhas = [];
+    $linhas[] = str_repeat('=', 60);
+    $linhas[] = '  ATUALIZAÇÃO DE CARACTERÍSTICAS';
+    $linhas[] = str_repeat('=', 60);
+    $linhas[] = 'Data/Hora:        ' . date('d/m/Y H:i:s');
+    $linhas[] = 'Empreendimento:   ' . $nomeEmp . ' (ID: ' . $empreendimentoId . ')';
+    if ($empresa !== '' && $empresa !== '—') {
+        $linhas[] = 'Empresa:          ' . $empresa;
+    }
+    $linhas[] = 'Usuário:          ' . $usuario;
+    $linhas[] = 'IP:               ' . ($_SERVER['REMOTE_ADDR'] ?? 'N/A');
+    $linhas[] = 'Campos alterados: ' . count($alteracoes);
+    $linhas[] = str_repeat('-', 60);
+
+    $i = 0;
+    foreach ($alteracoes as $campo => $v) {
+        $i++;
+        $antigo = formatarValorResumo($campo, $v['antigo'] ?? '(vazio)');
+        $novo   = formatarValorResumo($campo, $v['novo']   ?? '(vazio)');
+
+        $linhas[] = '';
+        $linhas[] = sprintf('[%02d] %s', $i, $campo);
+        $linhas[] = '     ANTIGO: ' . $antigo;
+        $linhas[] = '     NOVO:   ' . $novo;
+    }
+
+    $linhas[] = '';
+    $linhas[] = str_repeat('=', 60);
+
+    return implode(PHP_EOL, $linhas);
+}
+
+function registrarLogAtualizacao(PDO $db, int $empreendimentoId, string $nomeEmp,
+                                 string $empresa, string $usuario,
+                                 array $alteracoes, bool $emailEnviado): bool
+{
+    if (empty($alteracoes)) {
+        return false;
+    }
+
+    $memo = montarMemoAlteracoes($empreendimentoId, $nomeEmp, $empresa, $usuario, $alteracoes);
+
+    try {
+        $stmt = $db->prepare("
+            INSERT INTO log_caracteristicas
+                (Empreend_ID, NomeEmpreendimento, Empresa, Usuario, IP,
+                 DataHora, QtdAlteracoes, EmailEnviado, Memo)
+            VALUES
+                (:id, :nome, :empresa, :usuario, :ip,
+                 NOW(), :qtd, :email, :memo)
+        ");
+        $stmt->execute([
+            ':id'      => $empreendimentoId,
+            ':nome'    => $nomeEmp,
+            ':empresa' => ($empresa !== '—' ? $empresa : null),
+            ':usuario' => $usuario,
+            ':ip'      => $_SERVER['REMOTE_ADDR'] ?? null,
+            ':qtd'     => count($alteracoes),
+            ':email'   => $emailEnviado ? 1 : 0,
+            ':memo'    => $memo,
+        ]);
+        return true;
+    } catch (PDOException $e) {
+        // Nunca quebra o fluxo principal por falha no log
+        error_log('[log_caracteristicas] ' . $e->getMessage());
+        return false;
+    }
 }
 
 // ==================== ID ====================
@@ -339,6 +412,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $emailEnviado = enviarEmailAtualizacao(
                         $id, $dadosAntigos['NomeEmpreendimento'],
                         $dadosAntigos['NomeEmpresa'], $_SESSION['Usuario'], $alteracoes
+                    );
+                }
+
+                // REGISTRA O LOG (uma única linha por submissão)
+                if (!empty($alteracoes)) {
+                    registrarLogAtualizacao(
+                        $db,
+                        $id,
+                        $dadosAntigos['NomeEmpreendimento'],
+                        $dadosAntigos['NomeEmpresa'],
+                        $_SESSION['Usuario'],
+                        $alteracoes,
+                        $emailEnviado
                     );
                 }
 
