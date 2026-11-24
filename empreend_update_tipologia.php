@@ -561,38 +561,13 @@ $sugestoesTipologia = [
 <!-- ============================================================ -->
 <!-- HEADER                                                       -->
 <!-- ============================================================ -->
-<header class="header-neo">
-    <div class="header-inner">
+<?php
+$pageTitle    = 'Empreendimentos - Tipologias';           // OBRIGATÓRIO
+$pageSubtitle = 'SunnyImob';  // opcional
+$pageIcon     = 'fa-city';                   // opcional (default: fa-building)
+include 'header.php';
+?>
 
-        <div class="header-brand">
-            <img src="img/logosunny.jpg" alt="Logotipo" class="logo-img">
-            <div class="header-brand-text">
-                <h1><i class="fas fa-layer-group mr-2"></i> Atualizar Tipologia</h1>
-                <p>SunnyImob · Edição rápida</p>
-            </div>
-        </div>
-
-        <div class="header-stats">
-            <div class="stat-badge">
-                <span class="num"><?php echo $total; ?></span>
-                <span class="label">Total</span>
-            </div>
-            <div class="stat-badge is-success">
-                <span class="num"><?php echo $comTipologia; ?></span>
-                <span class="label">Com tipologia</span>
-            </div>
-            <div class="stat-badge is-warning">
-                <span class="num"><?php echo $semTipologia; ?></span>
-                <span class="label">Sem tipologia</span>
-            </div>
-        </div>
-
-        <a href="#" class="btn-neo-close" onclick="tentarFechar(event)">
-            <i class="fas fa-times"></i> Fechar
-        </a>
-
-    </div>
-</header>
 
 <!-- ============================================================ -->
 <!-- CONTEÚDO                                                     -->

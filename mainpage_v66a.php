@@ -31,6 +31,7 @@ if (!registrarNavegacao($conn, $_SESSION)) {
 
 $mostrarAlertaManutencao = EstaEmManutencao('sunny');
 
+
 $_SESSION['menuPrincipal'] = "mainpage_v66a.php";
 
 // Variaveis para armazenar imagens do carrossel
@@ -987,12 +988,19 @@ body {
     <!-- MENUS -->
     <nav class="menus-bar">
         <div class="dropdown">
-            <button class="btn btn-menu" type="button" onclick="window.open('empreend_mapa_v5vbr.php', '_blank')">
-                <i class="fas fa-map"></i> Mapa
-            </button>
+
+         <!-- abri ou nao com aba  -->
+        <?php
+        $targetLink = $_SESSION['link_target'] ?? '_self';
+        $targetEsc = htmlspecialchars($targetLink, ENT_QUOTES, 'UTF-8');
+        $relNovaAba = ($targetLink === '_blank') ? ' rel="noopener noreferrer"' : '';
+        ?>
+        <button class="btn btn-menu" type="button" onclick="window.open('empreend_mapa_v5vbr.php', '<?= $targetEsc ?>', 'noopener,noreferrer')">
+            <i class="fas fa-map"></i> Mapa
+        </button>
         </div>
         <div class="dropdown">
-            <button class="btn btn-menu" type="button" onclick="window.open('listar_captacoes.php', '_blank')">
+            <button class="btn btn-menu" type="button" onclick="window.open('listar_captacoes.php', '<?= $targetEsc ?>', 'noopener,noreferrer')">
                 <i class="fas fa-map"></i> Captações
             </button>
         </div>
@@ -1005,8 +1013,8 @@ body {
                 <i class="fas fa-list"></i> Consultas
             </button>
             <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="empresa_list_v3b.php" target="_blank"><i class="fas fa-building"></i> Imóveis</a></li>
-                <li><a class="dropdown-item" href="gestao_empreend_filtro_local2.php" target="_blank"><i class="fas fa-images"></i> Cards</a></li>
+                <li><a class="dropdown-item" href="empresa_list_v3b.php" target="<?= $targetEsc ?>"<?= $relNovaAba ?>><i class="fas fa-building"></i> Imóveis</a></li>
+                <li><a class="dropdown-item" href="gestao_empreend_filtro_local2.php" target="<?= $targetEsc ?>"<?= $relNovaAba ?>><i class="fas fa-images"></i> Cards</a></li>
             </ul>
         </div>
 
@@ -1015,18 +1023,19 @@ body {
                 <i class="fas fa-tools"></i> Ferramentas
             </button>
             <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="calcInterativaX7d.php" target="_blank"><i class="fas fa-calculator"></i> Calculadora %/R$</a></li>
-                <li><a class="dropdown-item" href="calcInterativaX6a-pre-pos.php" target="_blank"><i class="fas fa-calculator"></i> Calculadora Pré/Pós</a></li>
-                <li><a class="dropdown-item" href="calcRandon3.php" target="_blank"><i class="fas fa-calculator"></i> Calc. Inteligente</a></li>
+                <li><a class="dropdown-item" href="calcInterativaX7d.php" target="<?= $targetEsc ?>"<?= $relNovaAba ?>><i class="fas fa-calculator"></i> Calculadora %/R$</a></li>
+                <li><a class="dropdown-item" href="calcInterativaX6a-pre-pos.php" target="<?= $targetEsc ?>"<?= $relNovaAba ?>><i class="fas fa-calculator"></i> Calculadora Pré/Pós</a></li>
+                <li><a class="dropdown-item" href="calcRandon3.php" target="<?= $targetEsc ?>"<?= $relNovaAba ?>><i class="fas fa-calculator"></i> Calc. Inteligente</a></li>
 
                 <?php if (UsuarioPodeEditar()): ?>
-                    <li><a class="dropdown-item" href="menu4b.php" target="_blank"><i class="fas fa-pencil-alt"></i> Menu Atualizador</a></li>
+                    <li><a class="dropdown-item" href="menu4b.php" target="<?= $targetEsc ?>"<?= $relNovaAba ?>><i class="fas fa-pencil-alt"></i> Menu Atualizador</a></li>
                 <?php endif; ?>
             </ul>
         </div>
+        <!-- =============== -->
 
         <?php if (strtoupper($_SESSION['Usuario']) == "BARRETO"): ?>
-<div class="dropdown">
+        <div class="dropdown">
             <button class="btn btn-menu dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                 <i class="fas fa-code"></i> Dev
             </button>

@@ -32,12 +32,11 @@ try {
 $isBarreto = (mb_strtolower(trim($loggedUser)) === 'barreto');
 
 // ============================================================
-// ENDPOINT AJAX: exclusão em lote (CORRIGIDO)
+// ENDPOINT AJAX: exclusão em lote
 // ============================================================
 if ($isBarreto && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_users') {
     header('Content-Type: application/json; charset=utf-8');
 
-    // Log de diagnóstico
     error_log("[DELETE_USERS] iniciado — user={$loggedUser}, method={$_SERVER['REQUEST_METHOD']}, ids=" . json_encode($_POST['ids'] ?? []));
 
     try {
@@ -70,45 +69,38 @@ if ($isBarreto && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? 
 
         $db->beginTransaction();
         try {
-            // ── 1) Tabela de relacionamento usuario_grupo (evita FK constraint) ──
             $ugCleaned = false;
             foreach (['UserId', 'UserID', 'userid'] as $ugCol) {
                 try {
                     $db->prepare("DELETE FROM usuario_grupo WHERE `$ugCol` IN ($ph)")->execute($ids);
                     $ugCleaned = true;
                     break;
-                } catch (Exception $e) {
-                    // tenta próximo nome de coluna
-                }
+                } catch (Exception $e) { }
             }
             if (!$ugCleaned) {
-                error_log("[DELETE_USERS] Aviso: não foi possível limpar usuario_grupo (tabela/coluna pode não existir)");
+                error_log("[DELETE_USERS] Aviso: não foi possível limpar usuario_grupo");
             }
 
-            // ── 2) Diretorias onde o usuário é diretor ──
             try {
                 $db->prepare("DELETE FROM diretorias WHERE UserId IN ($ph)")->execute($ids);
             } catch (Exception $e) {
                 error_log("[DELETE_USERS] diretorias cleanup: " . $e->getMessage());
             }
 
-            // ── 3) Gerências onde o usuário é gerente ──
             try {
                 $db->prepare("DELETE FROM gerencias WHERE UserId IN ($ph)")->execute($ids);
             } catch (Exception $e) {
                 error_log("[DELETE_USERS] gerencias cleanup: " . $e->getMessage());
             }
 
-            // ── 4) O usuário em si — SEM restrição de IdEmp (cross-empresa) ──
             $stmt = $db->prepare("DELETE FROM usuarios WHERE $userCol IN ($ph)");
             $stmt->execute($ids);
             $deleted = $stmt->rowCount();
 
             $db->commit();
 
-            error_log("[DELETE_USERS] OK — requested={$totalRequested}, deleted={$deleted}, ids=" . json_encode($ids));
+            error_log("[DELETE_USERS] OK — requested={$totalRequested}, deleted={$deleted}");
 
-            // ── Mensagem de retorno ──
             $success = ($deleted > 0);
             if ($deleted === $totalRequested) {
                 $message = $deleted . ' usuário(s) excluído(s) com sucesso.';
@@ -161,7 +153,6 @@ try {
     $idsDiretores = $db->query("SELECT DISTINCT UserId FROM diretorias WHERE UserId IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
     $idsGerentes  = $db->query("SELECT DISTINCT UserId FROM gerencias  WHERE UserId IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
 
-    // Lista TODOS os usuários (todas as empresas)
     $todosUsuarios = $db->query("
         SELECT * FROM usuarios
         ORDER BY Ativo DESC, Usuario ASC
@@ -206,7 +197,7 @@ try {
     $totalGeral       = $totalAtivos + $totalInativos;
 
     // --- Email de notificação ---
-    if (($_SERVER['REMOTE_ADDR'] ?? '') !== '127.0.0.1' && ($_SERVER['REMOTE_ADDR'] ?? '') !== '::1') {
+    if (($_SERVER['REMOTE_ADDR'] ?? '') !== '127.0.0.1' && ($SERVER['REMOTE_ADDR'] ?? $_SERVER['REMOTE_ADDR'] ?? '') !== '::1') {
         $assunto  = "Usuarios Orlae - " . strtoupper($loggedUser) . " - " . date('d/m/Y H:i:s');
         $mensagem = "Acesso à página de Gestão de Ativos\n\n"
                   . "Título: Usuarios Tocca Onze\n"
@@ -278,118 +269,72 @@ $data_hora    = date("d/m/Y H:i");
             -webkit-font-smoothing: antialiased;
         }
 
-        /* HEADER */
-        .app-header {
-            background: var(--primary);
-            color: #fff;
-            border-bottom: 5px solid var(--shadow-color);
-            box-shadow: 0 6px 0 0 var(--shadow-color);
-            padding: 14px 0;
-            position: sticky;
-            top: 0;
-            z-index: 50;
-            margin-bottom: 24px;
-            position: relative;
-        }
-        .app-header::after {
-            content: "";
-            position: absolute; inset: 0;
-            background: linear-gradient(135deg, rgba(255,255,255,0.08) 0 50%, transparent 50% 100%);
-            background-size: 40px 40px;
-            pointer-events: none;
-        }
-        .header-inner {
+        /* ============================================================ */
+        /* STATS BAR (KPIs) — abaixo do header.php                      */
+        /* ============================================================ */
+        .stats-bar {
             max-width: 1400px;
-            margin: 0 auto;
+            margin: 0 auto 24px;
             padding: 0 20px;
+        }
+        .stats-bar-inner {
             display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 20px;
             flex-wrap: wrap;
-            position: relative;
-            z-index: 1;
+            gap: 12px;
+            align-items: stretch;
         }
-        .header-brand { display: flex; align-items: center; gap: 16px; min-width: 0; }
-        .logo-img {
-            height: 58px; width: auto; max-width: 160px; min-width: 58px;
-            object-fit: contain;
-            border: 3px solid var(--shadow-color);
-            border-radius: 12px;
-            box-shadow: 4px 4px 0 0 var(--shadow-color);
+        .stats-bar .stat-badge {
+            flex: 1 1 0;
+            min-width: 130px;
             background: #fff;
-            padding: 5px 8px;
-            flex-shrink: 0;
-        }
-        .header-title h1 {
-            margin: 0;
-            font-size: 1.25rem;
-            font-weight: 900;
-            letter-spacing: -0.4px;
-            line-height: 1.15;
-        }
-        .header-title p {
-            margin: 4px 0 0;
-            font-size: 0.78rem;
-            font-weight: 600;
-            opacity: 0.9;
-        }
-        .header-title p strong {
-            background: rgba(255,255,255,0.18);
-            padding: 1px 8px;
-            border-radius: 6px;
-        }
-
-        .header-stats { display: flex; gap: 10px; flex-shrink: 0; flex-wrap: wrap; }
-        .stat-badge {
-            background: rgba(0,0,0,0.18);
-            border: 2px solid var(--shadow-color);
+            color: var(--text-color);
+            border: 3px solid var(--shadow-color);
+            box-shadow: 4px 4px 0 0 var(--shadow-color);
             border-radius: 12px;
-            padding: 8px 16px;
-            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            padding: 12px 18px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            min-width: 80px;
-        }
-        .stat-badge .num { font-size: 1.3rem; font-weight: 900; line-height: 1; letter-spacing: -0.5px; }
-        .stat-badge .label {
-            font-size: 0.6rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-top: 4px;
-            font-weight: 700;
-            opacity: 0.9;
-        }
-        .stat-badge.is-success  { background: var(--success); }
-        .stat-badge.is-info     { background: var(--info);    }
-        .stat-badge.is-warning  { background: var(--warning); color: #000; }
-        .stat-badge.is-inativo  { background: var(--inativo); }
-
-        .btn-close-header {
-            background: var(--danger);
-            color: #fff;
-            border: 2px solid var(--shadow-color);
-            box-shadow: 4px 4px 0 0 var(--shadow-color);
-            border-radius: 10px;
-            padding: 8px 16px;
-            font-weight: 800;
-            font-size: 0.82rem;
-            cursor: pointer;
             transition: all 0.15s;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            flex-shrink: 0;
-            text-decoration: none;
         }
-        .btn-close-header:hover {
+        .stats-bar .stat-badge:hover {
             transform: translate(-2px, -2px);
             box-shadow: 6px 6px 0 0 var(--shadow-color);
-            background: #b02a37;
-            color: #fff;
+        }
+        .stats-bar .stat-badge .num {
+            font-size: 1.55rem;
+            font-weight: 900;
+            line-height: 1;
+            letter-spacing: -0.5px;
+            color: var(--primary);
+        }
+        .stats-bar .stat-badge .label {
+            font-size: 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 6px;
+            font-weight: 800;
+            opacity: 0.7;
+            color: var(--text-color);
+        }
+        .stats-bar .stat-badge.is-success .num { color: var(--success); }
+        .stats-bar .stat-badge.is-info    .num { color: var(--info); }
+        .stats-bar .stat-badge.is-warning .num { color: var(--warning); }
+        .stats-bar .stat-badge.is-inativo .num { color: var(--inativo); }
+
+        @media (max-width: 767px) {
+            .stats-bar { padding: 0 12px; margin-bottom: 18px; }
+            .stats-bar-inner { gap: 8px; }
+            .stats-bar .stat-badge {
+                flex: 1 1 calc(33.333% - 8px);
+                min-width: 0;
+                padding: 8px 10px;
+            }
+            .stats-bar .stat-badge .num { font-size: 1.2rem; }
+            .stats-bar .stat-badge .label { font-size: 0.55rem; }
         }
 
+        /* CONTAINER */
         .container-neo { max-width: 1400px; margin: 0 auto; padding: 0 20px; }
 
         /* TOOLBAR */
@@ -926,21 +871,7 @@ $data_hora    = date("d/m/Y H:i");
         .custom-footer small { opacity: 0.7; }
 
         /* RESPONSIVO */
-        @media (max-width: 992px) {
-            .header-title h1 { font-size: 1.1rem; }
-            .logo-img { height: 52px; max-width: 140px; }
-        }
         @media (max-width: 767px) {
-            .app-header { padding: 10px 0; }
-            .header-inner { padding: 0 12px; gap: 12px; }
-            .logo-img { height: 42px; max-width: 110px; padding: 3px 6px; }
-            .header-title h1 { font-size: 0.95rem; }
-            .header-title p { font-size: 0.7rem; }
-            .header-stats { width: 100%; flex-wrap: wrap; }
-            .stat-badge { flex: 1 1 calc(33.333% - 7px); min-width: 0; padding: 6px 10px; }
-            .stat-badge .num { font-size: 1.1rem; }
-            .stat-badge .label { font-size: 0.55rem; }
-            .btn-close-header { width: 100%; justify-content: center; }
             .container-neo { padding: 0 12px; }
             .table-card { display: none; }
             .mobile-container { display: block; }
@@ -955,45 +886,43 @@ $data_hora    = date("d/m/Y H:i");
 </head>
 <body>
 
-<!-- HEADER -->
-<header class="app-header">
-    <div class="header-inner">
-        <div class="header-brand">
-            <img src="img/logosunny.jpg" alt="Logo" class="logo-img">
-            <div class="header-title">
-                <h1><i class="fas fa-users me-2"></i> Gestão de Ativos</h1>
-                <p>Grupo <strong>TOCCA_ONZE</strong> · Painel de equipe</p>
-            </div>
-        </div>
+<!-- ============================================================ -->
+<!-- HEADER PADRÃO (via include)                                  -->
+<!-- ============================================================ -->
+<?php
+$pageTitle    = 'Usuários';
+$pageSubtitle = 'SunnyImob';
+$pageIcon     = 'fa-users';
+include 'header.php';
+?>
 
-        <div class="header-stats">
-            <div class="stat-badge">
-                <span class="num"><?php echo $totalGeralAtivos; ?></span>
-                <span class="label">Ativos</span>
-            </div>
-            <div class="stat-badge is-inativo">
-                <span class="num"><?php echo $totalInativos; ?></span>
-                <span class="label">Inativos</span>
-            </div>
-            <div class="stat-badge is-info">
-                <span class="num"><?php echo $totalLideranca; ?></span>
-                <span class="label">Liderança</span>
-            </div>
-            <div class="stat-badge is-success">
-                <span class="num"><?php echo $totalColaboradores; ?></span>
-                <span class="label">Colaboradores</span>
-            </div>
-            <div class="stat-badge is-warning">
-                <span class="num"><?php echo $ativosTocca; ?></span>
-                <span class="label">Grupo Tocca</span>
-            </div>
+<!-- ============================================================ -->
+<!-- KPIs (abaixo do header — separados)                          -->
+<!-- ============================================================ -->
+<div class="stats-bar">
+    <div class="stats-bar-inner">
+        <div class="stat-badge">
+            <span class="num"><?php echo (int)$totalGeralAtivos; ?></span>
+            <span class="label">Ativos</span>
         </div>
-
-        <a href="#" class="btn-close-header" onclick="window.close(); return false;">
-            <i class="fas fa-times"></i> Fechar
-        </a>
+        <div class="stat-badge is-inativo">
+            <span class="num"><?php echo (int)$totalInativos; ?></span>
+            <span class="label">Inativos</span>
+        </div>
+        <div class="stat-badge is-info">
+            <span class="num"><?php echo (int)$totalLideranca; ?></span>
+            <span class="label">Liderança</span>
+        </div>
+        <div class="stat-badge is-success">
+            <span class="num"><?php echo (int)$totalColaboradores; ?></span>
+            <span class="label">Colaboradores</span>
+        </div>
+        <div class="stat-badge is-warning">
+            <span class="num"><?php echo (int)$ativosTocca; ?></span>
+            <span class="label">Grupo Tocca</span>
+        </div>
     </div>
-</header>
+</div>
 
 <!-- CONTEÚDO -->
 <div class="container-neo">
@@ -1256,7 +1185,6 @@ $data_hora    = date("d/m/Y H:i");
     'use strict';
 
     const IS_BARRETO = <?php echo $isBarreto ? 'true' : 'false'; ?>;
-    // URL robusta: usa o href atual (sem fragmento), garantindo o mesmo endpoint da página
     const DELETE_URL = window.location.href.split('#')[0];
 
     $(document).ready(function () {
@@ -1355,7 +1283,6 @@ $data_hora    = date("d/m/Y H:i");
             filtrarCards($search.val());
         });
 
-        // 3 opções mutuamente exclusivas de status
         $('#filterAtivo, #filterInativo, #filterTodos').on('change', function () {
             if (this.checked) {
                 $('#filterAtivo, #filterInativo, #filterTodos').not(this).prop('checked', false);

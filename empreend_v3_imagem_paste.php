@@ -683,6 +683,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
 
+<?php
+$pageTitle    = 'Empreendimento - Imagens';           // OBRIGATÓRIO
+$pageSubtitle = 'SunnyImob';  // opcional
+$pageIcon     = 'fa-city';                   // opcional (default: fa-building)
+include 'header.php';
+?>
+
 <div class="main-wrapper">
 
     <!-- ============================================================ -->

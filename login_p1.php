@@ -27,7 +27,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $usuario = trim($_POST['usuario'] ?? '');
     $senha   = trim($_POST['senha']   ?? '');
 
+
+
+   // --- VERIFICACAO DA ABA
+
+    // Caminho para o arquivo aba.txt (ajuste conforme a estrutura de pastas do sistema)
+    $arquivoAba = __DIR__ . '/aba.txt';
+
+    // Se o arquivo existir, abre em nova aba (_blank); caso contrário, na mesma aba (_self)
+    $_SESSION['link_target'] = file_exists($arquivoAba) ? '_blank' : '_self';
+    $_SESSION['abrir_nova_aba'] = file_exists($arquivoAba);    
+
 // --- VERIFICAÇÃO DE MANUTENÇÃO LOGO NO INÍCIO DO POST ---
+
     // Usando o mesmo padrão do manutencao_config.php (manut.txt na raiz do projeto)
     $arquivo_manut_padrao = __DIR__ . "/manut.txt";
 

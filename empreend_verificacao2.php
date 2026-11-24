@@ -805,42 +805,12 @@ ksort($porResponsavel, SORT_NATURAL | SORT_FLAG_CASE);
 <!-- ============================================================ -->
 <!-- HEADER                                                       -->
 <!-- ============================================================ -->
-<header class="header-neo">
-    <div class="header-inner">
-
-        <div class="header-brand">
-            <img src="img/logosunny.jpg" alt="Logotipo" class="logo-img">
-            <div class="header-brand-text">
-                <h1><i class="fas fa-clipboard-check mr-2"></i> Dados em Branco</h1>
-                <p>SunnyImob · Auditoria de cadastros</p>
-            </div>
-        </div>
-
-        <div class="header-stats">
-            <div class="stat-badge">
-                <span class="num"><?php echo $totalEmp; ?></span>
-                <span class="label">Total</span>
-            </div>
-            <div class="stat-badge is-danger">
-                <span class="num"><?php echo $comPendencias; ?></span>
-                <span class="label">Com pendências</span>
-            </div>
-            <div class="stat-badge is-success">
-                <span class="num"><?php echo $semPendencias; ?></span>
-                <span class="label">Completos</span>
-            </div>
-            <div class="stat-badge is-warning">
-                <span class="num"><?php echo $totalFaltantes; ?></span>
-                <span class="label">Campos faltando</span>
-            </div>
-        </div>
-
-        <a href="javascript:window.close()" class="btn-neo-close">
-            <i class="fas fa-times"></i> Fechar
-        </a>
-
-    </div>
-</header>
+<?php
+$pageTitle    = 'Empreendimentos - Dados Vazios';           // OBRIGATÓRIO
+$pageSubtitle = 'SunnyImob';  // opcional
+$pageIcon     = 'fa-city';                   // opcional (default: fa-building)
+include 'header.php';
+?>
 
 <!-- ============================================================ -->
 <!-- CONTEÚDO                                                     -->

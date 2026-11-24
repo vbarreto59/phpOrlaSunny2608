@@ -649,38 +649,12 @@ $isBarreto = (strtoupper($_SESSION['Usuario'] ?? '') === 'BARRETO');
 <!-- ============================================================ -->
 <!-- HEADER                                                       -->
 <!-- ============================================================ -->
-<header class="header-neo">
-    <div class="header-inner">
-
-        <div class="header-brand">
-            <img src="img/logosunny.jpg" alt="Logotipo" class="logo-img">
-            <div class="header-brand-text">
-                <h1><i class="fas fa-map-marked-alt mr-2"></i> Editar Localização</h1>
-                <p>SunnyImob · Localização e Link do Mapa</p>
-            </div>
-        </div>
-
-        <div class="header-stats">
-            <div class="stat-badge">
-                <span class="num"><?php echo $total; ?></span>
-                <span class="label">Total</span>
-            </div>
-            <div class="stat-badge is-success">
-                <span class="num"><?php echo $comLoc; ?></span>
-                <span class="label">Com localização</span>
-            </div>
-            <div class="stat-badge is-info">
-                <span class="num"><?php echo $comMap; ?></span>
-                <span class="label">Com link mapa</span>
-            </div>
-        </div>
-
-        <a href="#" class="btn-neo-close" onclick="tentarFechar(event)">
-            <i class="fas fa-times"></i> Fechar
-        </a>
-
-    </div>
-</header>
+<?php
+$pageTitle    = 'Empreendimentos - Localização';           // OBRIGATÓRIO
+$pageSubtitle = 'SunnyImob';  // opcional
+$pageIcon     = 'fa-city';                   // opcional (default: fa-building)
+include 'header.php';
+?>
 
 <!-- ============================================================ -->
 <!-- CONTEÚDO                                                     -->

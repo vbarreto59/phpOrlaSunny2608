@@ -540,41 +540,12 @@ $totalEmpreend = count($empreendimentos);
 </head>
 <body>
 
-<!-- ============================================================ -->
-<!-- HEADER                                                        -->
-<!-- ============================================================ -->
-<header class="app-header">
-    <div class="header-inner">
-        <div class="header-brand">
-            <img src="img/logosunny.jpg" alt="Logotipo Sunny" class="logo-img">
-            <div class="header-title">
-                <h1><i class="fas fa-building"></i> Empreendimentos</h1>
-                <p class="header-subtitle">SunnyImob · Painel de Gestão</p>
-            </div>
-        </div>
-
-        <div class="header-stats">
-            <div class="stat-badge stat-primary">
-                <span class="stat-num"><?php echo $totalEmpreend; ?></span>
-                <span class="stat-label">Total</span>
-            </div>
-            <div class="stat-badge stat-success">
-                <span class="stat-num"><?php echo $totalVendidos; ?></span>
-                <span class="stat-label">Vendidos</span>
-            </div>
-            <div class="stat-badge stat-danger">
-                <span class="stat-num"><?php echo $totalOcultos; ?></span>
-                <span class="stat-label">Ocultos</span>
-            </div>
-        </div>
-
-        <div class="header-actions">
-            <button type="button" class="btn-header btn-close" onclick="window.close()">
-                <i class="fas fa-times"></i> Fechar
-            </button>
-        </div>
-    </div>
-</header>
+<?php
+$pageTitle    = 'Empreendimentos';           // OBRIGATÓRIO
+$pageSubtitle = 'SunnyImob';  // opcional
+$pageIcon     = 'fa-city';                   // opcional (default: fa-building)
+include 'header.php';
+?>
 
 <!-- ============================================================ -->
 <!-- TOOLBAR                                                       -->

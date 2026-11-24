@@ -23,6 +23,23 @@ $themeDefaults = [
 $themeSafe = array_merge($themeDefaults, isset($theme) && is_array($theme) ? $theme : []);
 
 // ============================================================
+// LOGO DO HEADER (com fallback)
+// ============================================================
+$logoHeader = !empty($_SESSION['Conf_ImgLogo']) && file_exists(__DIR__ . '/' . $_SESSION['Conf_ImgLogo'])
+    ? $_SESSION['Conf_ImgLogo']
+    : 'logoSunny66a.JPG';
+
+// ============================================================
+// MODO DA JANELA (popup/aba nova vs. navegação normal)
+// ============================================================
+$modoGet       = strtolower(trim($_GET['modo'] ?? $_GET['target'] ?? ''));
+$sessionTarget = strtolower(trim((string)($_SESSION['link_target'] ?? '')));
+$abrirSessao   = !empty($_SESSION['abrir_nova_aba']) || ($sessionTarget === '_blank');
+
+$isBlankModo = in_array($modoGet, ['blank', '_blank', 'popup', 'nova'], true)
+    || ($modoGet !== 'self' && $abrirSessao);
+
+// ============================================================
 // CSRF
 // ============================================================
 if (empty($_SESSION['csrf_empresa'])) {
@@ -185,38 +202,137 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
             background: var(--bg-body);
             color: var(--text-color);
             font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
-            padding-top: 80px;
+            padding-top: 0;
             min-height: 100vh;
         }
 
-        /* Navbar neobrutalista */
-        .navbar-neo {
+        /* ============================================================ */
+        /* HEADER NEOBRUTALISTA                                          */
+        /* ============================================================ */
+        .header-neo {
             background: var(--primary);
+            color: #fff;
             border-bottom: 4px solid var(--shadow-color);
             box-shadow: 0 4px 0 0 var(--shadow-color);
-            padding: 0.7rem 0;
+            padding: 0.9rem 0;
+            margin-bottom: 2rem;
         }
-        .navbar-neo .navbar-brand { font-weight: 800; color: #fff; }
-        .navbar-neo .navbar-brand i { color: #fff; }
-        .navbar-neo .nav-link {
-            color: rgba(255,255,255,0.85);
+        .header-neo .logo-img {
+            height: 52px;
+            width: 52px;
+            object-fit: contain;
+            border: 2px solid var(--shadow-color);
+            border-radius: 10px;
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            background: #fff;
+            padding: 4px;
+        }
+        .header-neo .logo-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 52px;
+            height: 52px;
+            background: #fff;
+            color: var(--primary);
+            border: 2px solid var(--shadow-color);
+            border-radius: 10px;
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            font-size: 1.4rem;
+        }
+        .header-neo .header-title {
+            font-weight: 800;
+            font-size: 1.35rem;
+            margin: 0;
+            line-height: 1.1;
+            color: #fff;
+        }
+        .header-neo .header-subtitle {
+            display: block;
+            font-size: 0.75rem;
+            opacity: 0.85;
             font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+        }
+        .header-neo .header-nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            align-items: center;
+        }
+        .header-neo .header-nav-link {
+            color: rgba(255,255,255,0.85);
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.82rem;
+            padding: 0.4rem 0.9rem;
+            border-radius: 30px;
+            border: 2px solid transparent;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .header-neo .header-nav-link:hover {
+            color: #fff;
+            transform: translateY(-2px);
+            background: rgba(255,255,255,0.15);
+        }
+        .header-neo .header-nav-link.active {
+            color: #fff;
+            background: rgba(255,255,255,0.2);
+            border-color: var(--shadow-color);
+            box-shadow: 2px 2px 0 0 var(--shadow-color);
+        }
+        .header-neo .header-nav-link.danger {
+            background: var(--danger);
+            color: #fff;
+            border-color: var(--shadow-color);
+            box-shadow: 2px 2px 0 0 var(--shadow-color);
+        }
+        .header-neo .header-nav-link.danger:hover {
+            background: #b91c1c;
+            color: #fff;
+            transform: translateY(-2px);
+        }
+        .header-neo .header-user-btn {
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+            border: 2px solid var(--shadow-color);
+            box-shadow: 3px 3px 0 0 var(--shadow-color);
+            border-radius: 30px;
+            padding: 0.4rem 1rem;
+            font-weight: 700;
+            font-size: 0.82rem;
             transition: all 0.15s;
         }
-        .navbar-neo .nav-link:hover { color: #fff; transform: translateY(-2px); }
-        .navbar-neo .nav-link.active {
+        .header-neo .header-user-btn:hover,
+        .header-neo .header-user-btn:focus {
             color: #fff;
-            background: rgba(255,255,255,0.15);
-            border-radius: 8px;
+            background: rgba(255,255,255,0.25);
+            transform: translate(-2px, -2px);
+            box-shadow: 5px 5px 0 0 var(--shadow-color);
+            outline: none;
         }
-        .navbar-neo .dropdown-menu {
+        .header-neo .dropdown-menu {
             background: var(--card-bg);
             border: 2px solid var(--shadow-color);
             border-radius: 12px;
             box-shadow: 4px 4px 0 0 var(--shadow-color);
+            margin-top: 0.5rem;
         }
-        .navbar-neo .dropdown-item { color: var(--text-color); font-weight: 600; border-radius: 8px; }
-        .navbar-neo .dropdown-item:hover { background: var(--primary); color: #fff; }
+        .header-neo .dropdown-item {
+            color: var(--text-color);
+            font-weight: 600;
+            border-radius: 8px;
+        }
+        .header-neo .dropdown-item:hover {
+            background: var(--primary);
+            color: #fff;
+        }
+        .header-neo .dropdown-divider {
+            border-top: 2px solid var(--shadow-color);
+            opacity: 0.3;
+        }
 
         /* Card neobrutalista */
         .card-neo {
@@ -458,8 +574,13 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
 
         /* Responsivo */
         @media (max-width: 768px) {
-            body { padding-top: 70px; }
-            .navbar-neo .navbar-brand { font-size: 1rem; }
+            .header-neo { padding: 0.7rem 0; margin-bottom: 1.25rem; }
+            .header-neo .header-title { font-size: 1.05rem; }
+            .header-neo .header-nav {
+                justify-content: center;
+                width: 100%;
+                margin-top: 0.5rem;
+            }
             .card-neo .card-body { padding: 1rem; }
             .table-neo { font-size: 0.8rem; }
             .truncate-text { max-width: 100px; }
@@ -469,56 +590,16 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
 </head>
 <body>
 
-<!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark navbar-neo fixed-top">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="#">
-            <i class="fas fa-building me-2"></i>Gestão de Empresas
-        </a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarMain">
-            <ul class="navbar-nav me-auto">
-                <li class="nav-item">
-                    <a class="nav-link" href="gestao_vendas.php">
-                        <i class="fas fa-home me-1"></i>Home
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link active" href="gestao_empresa_list2.php">
-                        <i class="fas fa-building me-1"></i>Empresas
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="gestao_empreend_list_card.php">
-                        <i class="fas fa-city me-1"></i>Empreendimentos
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="javascript:window.close()">
-                        <i class="fas fa-arrow-left me-1"></i>Voltar
-                    </a>
-                </li>
-            </ul>
-            <ul class="navbar-nav ms-auto">
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown">
-                        <i class="fas fa-user-circle me-1"></i>Usuário
-                    </a>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" href="#"><i class="fas fa-user me-2"></i>Perfil</a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="#"><i class="fas fa-sign-out-alt me-2"></i>Sair</a></li>
-                    </ul>
-                </li>
-            </ul>
-        </div>
-    </div>
-</nav>
+<?php
+$pageTitle    = 'Empresas';           // OBRIGATÓRIO
+$pageSubtitle = 'SunnyImob';  // opcional
+$pageIcon     = 'fa-city';                   // opcional (default: fa-building)
+include 'header.php';
+?>
+
 
 <!-- Conteúdo -->
-<div class="container-fluid mt-4">
+<div class="container-fluid">
     <div class="row">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -751,6 +832,10 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
 <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"></script>
 
+
+<!-- ============================================================ -->
+<!-- CRUD + DATATABLES                                            -->
+<!-- ============================================================ -->
 <script>
 (function () {
     'use strict';
@@ -807,7 +892,6 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
             document.getElementById('btnSubmit').innerHTML =
                 '<i class="fas fa-save me-2"></i>Salvar';
 
-            // Reaplica máscaras após reset
             setTimeout(() => {
                 bindMasks();
                 document.getElementById('fieldNomeEmpresa').focus();
@@ -846,7 +930,6 @@ if (json_last_error() !== JSON_ERROR_NONE) $empresasJson = '[]';
             document.getElementById('btnSubmit').innerHTML =
                 '<i class="fas fa-save me-2"></i>Salvar Alterações';
 
-            // Reaplica máscaras
             setTimeout(bindMasks, 100);
 
             modal.show();

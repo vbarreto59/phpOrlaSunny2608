@@ -19,7 +19,7 @@ if (empty($_SESSION['Usuario'])) {
 $remote_addr = $_SERVER['REMOTE_ADDR'] ?? '';
 if ($remote_addr !== '127.0.0.1' && $remote_addr !== '::1') {
     $to = "sendmail@sunnyimob.com.br, valterpb@hotmail.com";
-    $subject = "SUN-CARDS-" . strtoupper($_SESSION['Usuario']) . " - " . 
+    $subject = "SUN-CARDS-" . strtoupper($_SESSION['Usuario']) . " - " .
                $remote_addr . " - " . date('Y-m-d') . " - " . date('H:i:s');
     $headers = "From: sendmail@sunnyimob.com.br\r\n";
     @mail($to, $subject, '', $headers);
@@ -39,17 +39,23 @@ try {
     $stmtEmpreendimentosTotal->execute();
     $empreendimentosTotal = $stmtEmpreendimentosTotal->fetchAll(PDO::FETCH_ASSOC);
 
-    $localidadeSelecionada = $_GET['localidade'] ?? '';
-    $tipologiaSelecionada = $_GET['tipoImovel'] ?? '';
-    $pavimentos = $_GET['pavimentos'] ?? '';
-    $precoInicial = $_GET['precoInicial'] ?? '';
-    $beiraMar = $_GET['beiraMar'] ?? '';
-    $empresaSelecionada = $_GET['empresa'] ?? '';
-    $empreendimentoSelecionado = $_GET['empreendimento'] ?? '';
+    $localidadeSelecionada    = $_GET['localidade']     ?? '';
+    $tipologiaSelecionada     = $_GET['tipoImovel']     ?? '';
+    $pavimentos               = $_GET['pavimentos']     ?? '';
+    $precoInicial             = $_GET['precoInicial']   ?? '';
+    $beiraMar                 = $_GET['beiraMar']       ?? '';
+    $empresaSelecionada       = $_GET['empresa']        ?? '';
+    $empreendimentoSelecionado= $_GET['empreendimento'] ?? '';
+    $buscaNome                = trim($_GET['busca_nome'] ?? '');
 
     $whereClause = "WHERE Ocultar = 0 AND MenorPreco > 0";
     $params = [];
 
+    // ===== BUSCA POR PARTE DO NOME =====
+    if ($buscaNome !== '') {
+        $whereClause .= " AND NomeEmpreendimento LIKE :buscaNome";
+        $params[':buscaNome'] = '%' . $buscaNome . '%';
+    }
     if (!empty($localidadeSelecionada)) {
         $whereClause .= " AND Localidade = :localidade";
         $params[':localidade'] = $localidadeSelecionada;
@@ -189,7 +195,7 @@ try {
             border: 3px solid var(--shadow-color);
             border-radius: 16px;
             box-shadow: 6px 6px 0px 0px var(--shadow-color);
-            padding: 1.5rem;
+            padding: 1.25rem;
             margin-bottom: 2rem;
         }
         .seletor-localidade .form-label {
@@ -251,46 +257,67 @@ try {
             color: #fff;
         }
 
-        /* Cards de empreendimento neobrutalistas */
+        /* ============================================================ */
+        /* GRID DE CARDS COMPACTOS                                       */
+        /* ============================================================ */
+        .empreendimentos-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 2rem;
+        }
+
         .empreendimento-container {
             background: var(--card-bg);
-            border: 3px solid var(--shadow-color);
-            border-radius: 16px;
-            box-shadow: 6px 6px 0px 0px var(--shadow-color);
+            border: 2px solid var(--shadow-color);
+            border-radius: 14px;
+            box-shadow: 4px 4px 0px 0px var(--shadow-color);
             overflow: hidden;
-            margin-bottom: 2rem;
+            display: flex;
+            flex-direction: column;
             transition: all 0.2s;
         }
         .empreendimento-container:hover {
-            transform: translateY(-4px);
-            box-shadow: 8px 8px 0px 0px var(--shadow-color);
+            transform: translateY(-3px);
+            box-shadow: 6px 6px 0px 0px var(--shadow-color);
         }
 
         .empreendimento-header {
             background: var(--primary);
             color: #fff;
-            padding: 1rem 1.5rem;
-            border-bottom: 3px solid var(--shadow-color);
+            padding: 0.55rem 0.85rem;
+            border-bottom: 2px solid var(--shadow-color);
+        }
+        .empreendimento-header .loc {
+            display: block;
+            font-size: 0.66rem;
+            font-weight: 600;
+            letter-spacing: 0.6px;
+            opacity: 0.85;
         }
         .empreendimento-header h3 {
-            margin: 0;
-            font-weight: 700;
+            margin: 2px 0;
+            font-size: 0.92rem;
+            font-weight: 800;
+            line-height: 1.15;
         }
-        .empreendimento-header h3 small {
-            opacity: 0.9;
-            font-weight: 400;
+        .empreendimento-header .empresa {
+            display: block;
+            font-size: 0.66rem;
+            opacity: 0.85;
         }
 
         .empreendimento-body {
             display: flex;
-            flex-wrap: wrap;
+            flex-direction: column;
+            flex: 1;
         }
         .empreendimento-imagem {
-            flex: 0 0 40%;
-            max-width: 40%;
-            min-height: 200px;
+            position: relative;
+            width: 100%;
+            height: 150px;
             background: var(--secondary);
-            border-right: 2px solid var(--shadow-color);
+            border-bottom: 2px solid var(--shadow-color);
         }
         .empreendimento-imagem img {
             width: 100%;
@@ -299,83 +326,84 @@ try {
             display: block;
         }
         .empreendimento-info {
-            flex: 0 0 60%;
-            max-width: 60%;
-            padding: 1.5rem;
+            padding: 0.7rem 0.85rem;
+            flex: 1;
         }
 
+        /* Badge verde Vendido (overlay) */
+        .badge-vendido {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--success);
+            color: #fff;
+            border: 2px solid var(--shadow-color);
+            box-shadow: 2px 2px 0px 0px var(--shadow-color);
+            border-radius: 30px;
+            padding: 0.18rem 0.65rem;
+            font-weight: 800;
+            font-size: 0.7rem;
+            letter-spacing: 0.5px;
+            z-index: 2;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* Linhas de detalhe compactas */
         .detalhe-item {
-            margin-bottom: 0.6rem;
-            padding-bottom: 0.6rem;
-            border-bottom: 2px solid var(--shadow-color);
+            margin-bottom: 0.35rem;
+            padding-bottom: 0.35rem;
+            border-bottom: 1px solid rgba(0,0,0,0.08);
         }
         .detalhe-item:last-child {
             border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
         }
         .detalhe-titulo {
             font-weight: 700;
             color: var(--text-color);
             opacity: 0.8;
-            font-size: 0.9rem;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
             display: flex;
             align-items: center;
         }
         .detalhe-titulo i {
-            margin-right: 8px;
+            margin-right: 5px;
             color: var(--primary);
+            font-size: 0.68rem;
         }
         .detalhe-valor {
-            font-size: 1rem;
-            padding-left: 28px;
+            font-size: 0.82rem;
+            padding-left: 16px;
+            margin-top: 1px;
         }
 
         .badge-neo {
             border: 2px solid var(--shadow-color);
             box-shadow: 2px 2px 0px 0px var(--shadow-color);
             border-radius: 30px;
-            padding: 0.3rem 0.9rem;
+            padding: 0.18rem 0.65rem;
             font-weight: 700;
+            font-size: 0.72rem;
         }
-        .badge-success-neo {
-            background: var(--success);
-            color: #fff;
-        }
-        .badge-warning-neo {
-            background: var(--warning);
-            color: #000;
-        }
-        .badge-secondary-neo {
-            background: #6c757d;
-            color: #fff;
-        }
-        .badge-info-neo {
-            background: var(--info);
-            color: #fff;
-        }
+        .badge-success-neo { background: var(--success); color: #fff; }
+        .badge-warning-neo { background: var(--warning); color: #000; }
+        .badge-secondary-neo { background: #6c757d; color: #fff; }
+        .badge-info-neo { background: var(--info); color: #fff; }
 
         .valor-destaque {
             color: var(--danger);
             font-weight: 700;
         }
 
-        .btn-detalhes {
-            margin-top: 0.5rem;
-        }
-
         /* Responsivo */
-        @media (max-width: 768px) {
-            .empreendimento-imagem,
-            .empreendimento-info {
-                flex: 0 0 100%;
-                max-width: 100%;
-            }
-            .empreendimento-imagem {
-                border-right: none;
-                border-bottom: 2px solid var(--shadow-color);
-                min-height: 180px;
-            }
-            .imagem-direita .empreendimento-body {
-                flex-direction: column;
+        @media (max-width: 575px) {
+            .empreendimentos-grid {
+                grid-template-columns: 1fr;
             }
         }
 
@@ -386,9 +414,8 @@ try {
             justify-content: center;
             background: var(--secondary);
             color: var(--text-color);
-            font-size: 1.2rem;
+            font-size: 0.9rem;
             height: 100%;
-            min-height: 200px;
         }
         .img-loading {
             background: linear-gradient(90deg, var(--secondary) 25%, #e9ecef 50%, var(--secondary) 75%);
@@ -423,21 +450,36 @@ try {
 </head>
 <body>
 
+<?php
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+$linkTarget   = $_SESSION['link_target'] ?? '_self';
+$abrirNovaAba = !empty($_SESSION['abrir_nova_aba']) || ($linkTarget === '_blank');
+$logoSessao   = trim((string)($_SESSION['Conf_ImgLogo'] ?? ''));
+$logoFallback = 'https://placehold.co/96x96/6B2117/FFFFFF?text=LOGO';
+?>
 <!-- HEADER NEOBRUTALISTA -->
 <header class="header-neo">
     <div class="container">
         <div class="d-flex flex-wrap align-items-center justify-content-between">
             <div class="d-flex align-items-center gap-3">
-                <img src="<?= htmlspecialchars($_SESSION['Conf_ImgLogo'] ?? '') ?>" 
-                     alt="Logo" class="logo-img" 
-                     onerror="this.onerror=null;this.src='https://placehold.co/96x96/6B2117/FFFFFF?text=LOGO'">
+                <img src="<?= htmlspecialchars($logoSessao !== '' ? $logoSessao : $logoFallback, ENT_QUOTES) ?>"
+                     alt="Logo" class="logo-img"
+                     onerror="this.onerror=null;this.src='<?= htmlspecialchars($logoFallback, ENT_QUOTES) ?>';">
                 <div>
                     <h1><i class="fas fa-building me-2"></i>Empreendimentos</h1>
                     <small class="d-block opacity-75">SunnyImob</small>
                 </div>
             </div>
-            <button class="btn-neo-close" onclick="window.close()">
-                <i class="fas fa-times me-1"></i> Fechar
+            <button type="button"
+                    id="btnAcaoHeader"
+                    data-target="<?= htmlspecialchars($linkTarget, ENT_QUOTES) ?>"
+                    data-nova-aba="<?= $abrirNovaAba ? '1' : '0' ?>"
+                    class="btn-neo-close">
+                <i class="fas <?= $abrirNovaAba ? 'fa-times me-1' : 'fa-arrow-left me-1' ?>"></i>
+                <span><?= $abrirNovaAba ? 'Fechar' : 'Voltar' ?></span>
             </button>
         </div>
     </div>
@@ -449,6 +491,15 @@ try {
     <div class="seletor-localidade">
         <form method="get" action="<?= htmlspecialchars($_SERVER['PHP_SELF']) ?>">
             <div class="row">
+                <!-- 🔎 NOVO: busca por parte do nome do empreendimento -->
+                <div class="col-12 col-md-6 mb-2">
+                    <b><label for="busca_nome" class="form-label fw-bold mb-1">Buscar por Nome:</label></b>
+                    <input type="text" id="busca_nome" name="busca_nome"
+                           class="form-control w-100"
+                           placeholder="Digite parte do nome do empreendimento…"
+                           value="<?= htmlspecialchars($buscaNome) ?>">
+                </div>
+
                 <div class="col-6 col-md-3 mb-2">
                     <b><label for="localidade" class="form-label fw-bold mb-1">Localidade:</label></b>
                     <select name="localidade" id="localidade" class="form-control w-100">
@@ -549,41 +600,40 @@ try {
     <div id="conteudo-para-pdf">
         <?php if (empty($empreendimentos)): ?>
             <div class="alert alert-info text-center" style="border: 2px solid var(--shadow-color); box-shadow: 4px 4px 0px 0px var(--shadow-color); border-radius: 12px; background: var(--card-bg);">
-                Nenhum empreendimento encontrado para esta localidade com os filtros aplicados.
+                Nenhum empreendimento encontrado com os filtros aplicados.
             </div>
         <?php endif; ?>
-        
-        <?php 
-        $contador = 0;
-        foreach ($empreendimentos as $empreendimento):
-            $contador++;
-            $classeAlternada = ($contador % 2 === 0) ? "imagem-direita" : "";
-        ?>
-            <div class="empreendimento-container <?= $classeAlternada ?>">
-                <div class="empreendimento-header">
-                    <h3>
-                        <small><?= htmlspecialchars(strtoupper($empreendimento['Localidade'])) ?></small><br>
-                        <i class="fas fa-building"></i> <?= htmlspecialchars(strtoupper($empreendimento['NomeEmpreendimento'])) ?>
-                        <small><?= htmlspecialchars(strtoupper($empreendimento['NomeEmpresa'])) ?></small>
-                    </h3>
-                </div>
-                <div class="empreendimento-body">
-                    <div class="empreendimento-imagem">
-                        <img src="card/<?= htmlspecialchars($empreendimento['Empreend_ID']) ?>.jpg" 
-                             alt="<?= htmlspecialchars($empreendimento['NomeEmpreendimento']) ?>" 
-                             class="img-loading" 
-                             onload="this.classList.remove('img-loading')"
-                             onerror="this.onerror=null;this.src='card/default.jpg';this.classList.add('img-fallback');this.classList.remove('img-loading');this.alt='Imagem não disponível'">
+
+        <div class="empreendimentos-grid">
+            <?php foreach ($empreendimentos as $empreendimento):
+                $isVendido = isset($empreendimento['Vendido']) &&
+                            ($empreendimento['Vendido'] == 1 || $empreendimento['Vendido'] == -1 || $empreendimento['Vendido'] === true);
+            ?>
+                <div class="empreendimento-container">
+                    <div class="empreendimento-header">
+                        <span class="loc"><?= htmlspecialchars(strtoupper($empreendimento['Localidade'])) ?></span>
+                        <h3><i class="fas fa-building"></i> <?= htmlspecialchars(strtoupper($empreendimento['NomeEmpreendimento'])) ?></h3>
+                        <span class="empresa"><?= htmlspecialchars(strtoupper($empreendimento['NomeEmpresa'])) ?></span>
                     </div>
-                    <div class="empreendimento-info">
-                        <div>
+                    <div class="empreendimento-body">
+                        <div class="empreendimento-imagem">
+                            <?php if ($isVendido): ?>
+                                <span class="badge-vendido"><i class="fas fa-check"></i> VENDIDO</span>
+                            <?php endif; ?>
+                            <img src="card/<?= htmlspecialchars($empreendimento['Empreend_ID']) ?>.jpg"
+                                 alt="<?= htmlspecialchars($empreendimento['NomeEmpreendimento']) ?>"
+                                 class="img-loading"
+                                 onload="this.classList.remove('img-loading')"
+                                 onerror="this.onerror=null;this.src='card/default.jpg';this.classList.add('img-fallback');this.classList.remove('img-loading');this.alt='Imagem não disponível'">
+                        </div>
+                        <div class="empreendimento-info">
                             <!-- Status Entrega -->
                             <div class="detalhe-item">
-                                <div class="detalhe-titulo"><i class="fas fa-calendar-check"></i> STATUS DE ENTREGA</div>
+                                <div class="detalhe-titulo"><i class="fas fa-calendar-check"></i> Status de Entrega</div>
                                 <div class="detalhe-valor">
                                     <?php if ($empreendimento['Entregue'] == true || $empreendimento['Entregue'] == 1 || $empreendimento['Entregue'] == -1): ?>
                                         <span class="badge badge-neo badge-success-neo"><i class="fas fa-check-circle"></i> ENTREGUE</span>
-                                    <?php else: 
+                                    <?php else:
                                         $mesEntrega = $empreendimento['MesEntrega'] ?? '';
                                         $anoEntrega = $empreendimento['AnoEntrega'] ?? '';
                                         $entregaTexto = '';
@@ -595,7 +645,7 @@ try {
                                             }
                                         }
                                         if (!empty($entregaTexto)): ?>
-                                            <span class="badge badge-neo badge-warning-neo"><i class="fas fa-clock"></i> PREVISÃO: <?= $entregaTexto ?></span>
+                                            <span class="badge badge-neo badge-warning-neo"><i class="fas fa-clock"></i> <?= $entregaTexto ?></span>
                                         <?php else: ?>
                                             <span class="badge badge-neo badge-secondary-neo"><i class="fas fa-question-circle"></i> SEM PREVISÃO</span>
                                         <?php endif; ?>
@@ -604,7 +654,7 @@ try {
                             </div>
                             <!-- Preço -->
                             <div class="detalhe-item">
-                                <div class="detalhe-titulo"><i class="fas fa-tag"></i> FAIXA DE PREÇO (Consultar unidades disponíveis)</div>
+                                <div class="detalhe-titulo"><i class="fas fa-tag"></i> Faixa de Preço</div>
                                 <div class="detalhe-valor">
                                     <?php
                                     $menorPreco = number_format($empreendimento['MenorPreco'], 2, ',', '.');
@@ -619,7 +669,7 @@ try {
                             </div>
                             <!-- Metragem -->
                             <div class="detalhe-item">
-                                <div class="detalhe-titulo"><i class="fas fa-ruler-combined"></i> FAIXA DE METRAGEM</div>
+                                <div class="detalhe-titulo"><i class="fas fa-ruler-combined"></i> Metragem</div>
                                 <div class="detalhe-valor">
                                     <?php
                                     if (!empty($empreendimento['MetragemMin']) && !empty($empreendimento['MetragemMax'])) {
@@ -640,7 +690,7 @@ try {
                             </div>
                             <!-- Tipologia -->
                             <div class="detalhe-item">
-                                <div class="detalhe-titulo"><i class="fas fa-bed"></i> TIPOLOGIA</div>
+                                <div class="detalhe-titulo"><i class="fas fa-bed"></i> Tipologia</div>
                                 <div class="detalhe-valor">
                                     <?php if (!empty(trim($empreendimento['Tipologia'] ?? ''))): ?>
                                         <?= htmlspecialchars(strtoupper($empreendimento['Tipologia'])) ?>
@@ -659,9 +709,9 @@ try {
                             <!-- Beira Mar -->
                             <?php if ($empreendimento['BeiraMar'] == true || $empreendimento['BeiraMar'] == 1 || $empreendimento['BeiraMar'] == -1): ?>
                                 <div class="detalhe-item">
-                                    <div class="detalhe-titulo"><i class="fas fa-umbrella-beach"></i> LOCALIZAÇÃO</div>
+                                    <div class="detalhe-titulo"><i class="fas fa-umbrella-beach"></i> Localização</div>
                                     <div class="detalhe-valor">
-                                        <span class="text-primary"><i class="fas fa-check-circle"></i> BEIRA MAR</span>
+                                        <span style="color: var(--primary); font-weight: 700;"><i class="fas fa-check-circle"></i> BEIRA MAR</span>
                                     </div>
                                 </div>
                             <?php endif; ?>
@@ -670,7 +720,7 @@ try {
                                 <div class="detalhe-item">
                                     <div class="detalhe-titulo"><i class="fas fa-map-marker-alt"></i> Localização</div>
                                     <div class="detalhe-valor">
-                                        <a href="https://maps.google.com/maps/search/?api=1&query=<?= urlencode($empreendimento['Localizacao']) ?>" target="_blank" class="text-blue-600 hover:text-blue-800 underline" style="color: var(--primary); font-weight: 600;">
+                                        <a href="https://maps.google.com/maps/search/?api=1&query=<?= urlencode($empreendimento['Localizacao']) ?>" target="_blank" style="color: var(--primary); font-weight: 600;">
                                             Ver no Mapa
                                         </a>
                                     </div>
@@ -680,23 +730,19 @@ try {
                             <?php if ($isBarreto): ?>
                                 <div class="detalhe-item">
                                     <div class="detalhe-valor">
-                                        <?php
-                                        $isSelected = in_array($empreendimento['Empreend_ID'], $selecoes);
-                                        ?>
+                                        <?php $isSelected = in_array($empreendimento['Empreend_ID'], $selecoes); ?>
                                         <?php if ($isSelected): ?>
                                             <span class="text-success"><i class="fas fa-check-circle"></i> Selecionado</span>
                                         <?php endif; ?>
-                                        <button class="btn btn-primary btn-selecionar" data-empreend-id="<?= htmlspecialchars($empreendimento['Empreend_ID']) ?>" style="display:<?= $isSelected ? 'none' : 'inline-block' ?>; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color); border-radius: 30px; background: var(--btn-bg); color: var(--btn-text); font-weight: 700; padding: 0.3rem 1.2rem;">
-                                            <i class="fas fa-plus"></i> Selecionar
-                                        </button>
+
                                     </div>
                                 </div>
                             <?php endif; ?>
                         </div>
                     </div>
                 </div>
-            </div>
-        <?php endforeach; ?>
+            <?php endforeach; ?>
+        </div>
     </div>
 
     <!-- Botão Voltar -->
@@ -719,10 +765,7 @@ try {
                 $.ajax({
                     url: 'selecao_salvar.php',
                     type: 'POST',
-                    data: {
-                        delete_all: 'true',
-                        usuario_id: '<?= $_SESSION['UserId'] ?? '' ?>'
-                    },
+                    data: { delete_all: 'true', usuario_id: '<?= $_SESSION['UserId'] ?? '' ?>' },
                     success: function(response) {
                         if (response === 'success') {
                             alert('Todas as seleções foram limpas com sucesso.');
@@ -732,9 +775,7 @@ try {
                             alert('Erro ao limpar seleções: ' + response);
                         }
                     },
-                    error: function() {
-                        alert('Erro ao conectar com o servidor.');
-                    }
+                    error: function() { alert('Erro ao conectar com o servidor.'); }
                 });
             }
         });
@@ -743,14 +784,10 @@ try {
         $('.btn-selecionar').on('click', function() {
             var empreendId = $(this).data('empreend-id');
             var button = $(this);
-
             $.ajax({
                 url: 'selecao_salvar.php',
                 type: 'POST',
-                data: {
-                    empreend_id: empreendId,
-                    usuario_id: '<?= $_SESSION['UserId'] ?? '' ?>'
-                },
+                data: { empreend_id: empreendId, usuario_id: '<?= $_SESSION['UserId'] ?? '' ?>' },
                 success: function(response) {
                     if (response === 'success') {
                         button.hide();
@@ -759,9 +796,7 @@ try {
                         alert('Erro ao salvar seleção: ' + response);
                     }
                 },
-                error: function() {
-                    alert('Erro ao conectar com o servidor.');
-                }
+                error: function() { alert('Erro ao conectar com o servidor.'); }
             });
         });
     });
@@ -782,20 +817,16 @@ try {
             const reaisFormatados = reais.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
             return reaisFormatados + ',' + centavos;
         }
-        function removerMascara(valor) {
-            return valor.replace(/\D/g, '');
-        }
+        function removerMascara(valor) { return valor.replace(/\D/g, ''); }
 
         if (inputPrecoInicial.value && inputPrecoInicial.value !== '0') {
             inputPrecoInicialVisivel.value = formatarValor(inputPrecoInicial.value);
         }
-
         inputPrecoInicialVisivel.addEventListener('input', function(e) {
             const valorSemMascara = removerMascara(e.target.value);
             inputPrecoInicial.value = valorSemMascara;
             e.target.value = formatarValor(valorSemMascara);
         });
-
         inputPrecoInicialVisivel.addEventListener('focus', function() {
             if (this.value === '') {
                 this.value = '0,00';
@@ -804,6 +835,90 @@ try {
         });
     });
 </script>
+
+<script>
+(function () {
+    const FALLBACK_VOLTAR = 'mainpage_v66a.php';
+
+    function obterBotao() {
+        return document.getElementById('btnAcaoHeader');
+    }
+
+    function ehModoBlank(btn) {
+        if (!btn) return false;
+        const target = (btn.dataset.target || '').trim().toLowerCase();
+        const novaAba = (btn.dataset.novaAba || '').trim();
+
+        if (novaAba === '1' || target === '_blank') return true;
+        if (target === '_self') return false;
+        return Boolean(window.opener && !window.opener.closed);
+    }
+
+    function sincronizarVisualBotao() {
+        const btn = obterBotao();
+        if (!btn) return;
+
+        const isBlank = ehModoBlank(btn);
+        const icon = btn.querySelector('i');
+        const span = btn.querySelector('span');
+
+        if (icon) {
+            icon.className = isBlank ? 'fas fa-times me-1' : 'fas fa-arrow-left me-1';
+        }
+        if (span) {
+            span.textContent = isBlank ? 'Fechar' : 'Voltar';
+        }
+
+        btn.setAttribute('title', isBlank ? 'Fechar aba/janela' : 'Voltar para a tela anterior');
+    }
+
+    function tratarCliqueBotao(event) {
+        if (event) event.preventDefault();
+
+        const btn = obterBotao();
+        if (ehModoBlank(btn)) {
+            if (typeof fecharJanela === 'function') {
+                fecharJanela(event);
+                return;
+            }
+            window.close();
+            setTimeout(function () {
+                if (!window.closed) {
+                    window.location.href = FALLBACK_VOLTAR;
+                }
+            }, 150);
+            return;
+        }
+
+        const mesmoDominio =
+            window.history.length > 1 &&
+            document.referrer &&
+            document.referrer.indexOf(window.location.origin) === 0;
+
+        if (mesmoDominio) {
+            window.history.back();
+        } else {
+            window.location.href = FALLBACK_VOLTAR;
+        }
+    }
+
+    function inicializarHeaderScript() {
+        const btn = obterBotao();
+        if (!btn) return;
+
+        sincronizarVisualBotao();
+        btn.removeEventListener('click', tratarCliqueBotao);
+        btn.addEventListener('click', tratarCliqueBotao);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', inicializarHeaderScript);
+    } else {
+        inicializarHeaderScript();
+    }
+})();
+</script>
+
 
 </body>
 </html>

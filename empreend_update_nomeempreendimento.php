@@ -464,37 +464,12 @@ try {
 </head>
 <body data-theme-primary="<?php echo htmlspecialchars($themeSafe['primary']); ?>">
 
-<!-- ============================================================ -->
-<!-- HEADER                                                       -->
-<!-- ============================================================ -->
-<header class="header-neo">
-    <div class="header-inner">
-
-        <div class="header-brand">
-            <img src="img/logosunny.jpg" alt="Logotipo" class="logo-img">
-            <div class="header-brand-text">
-                <h1><i class="fas fa-pen-nib mr-2"></i> Atualizar Nome do Empreendimento</h1>
-                <p>SunnyImob · Edição rápida</p>
-            </div>
-        </div>
-
-        <div class="header-stats">
-            <div class="stat-badge">
-                <span class="num"><?php echo $total; ?></span>
-                <span class="label">Total</span>
-            </div>
-            <div class="stat-badge">
-                <span class="num"><?php echo $totalEmpresas; ?></span>
-                <span class="label">Empresas</span>
-            </div>
-        </div>
-
-        <a href="#" class="btn-neo-close" onclick="tentarFechar(event)">
-            <i class="fas fa-times"></i> Fechar
-        </a>
-
-    </div>
-</header>
+<?php
+$pageTitle    = 'Empreendimentos - Nomes';           // OBRIGATÓRIO
+$pageSubtitle = 'SunnyImob';  // opcional
+$pageIcon     = 'fa-city';                   // opcional (default: fa-building)
+include 'header.php';
+?>
 
 <!-- ============================================================ -->
 <!-- CONTEÚDO                                                     -->

@@ -661,23 +661,12 @@ foreach ($empreendimentos as $e) {
 </head>
 <body>
 
-<!-- HEADER -->
-<header class="app-header">
-    <div class="header-inner">
-        <div class="header-brand">
-            <img src="img/logosunny.jpg" alt="Logo" class="header-logo" onerror="this.style.display='none'">
-            <div class="header-title">
-                <h1><i class="fas fa-layer-group me-2"></i> Atualizar Pavimentos</h1>
-                <p>Edição rápida · <?= $total ?> empreendimentos</p>
-            </div>
-        </div>
-        <div class="header-actions">
-            <a href="#" onclick="fecharJanela(event); return false;" class="btn-header danger">
-                <i class="fas fa-times"></i> Fechar
-            </a>
-        </div>
-    </div>
-</header>
+<?php
+$pageTitle    = 'Empreendimentos - Pavimentos';           // OBRIGATÓRIO
+$pageSubtitle = 'SunnyImob';  // opcional
+$pageIcon     = 'fa-city';                   // opcional (default: fa-building)
+include 'header.php';
+?>
 
 <div class="container-neo">
 

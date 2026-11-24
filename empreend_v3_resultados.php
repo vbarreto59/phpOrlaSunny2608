@@ -15,6 +15,40 @@ if (empty($_SESSION['Usuario'])) {
 // FUNÇÕES AUXILIARES
 // =============================================
 
+/**
+ * Converte uma data em vários formatos possíveis para "d/m/Y".
+ * Suporta: d/m/Y H:i:s, d/m/Y H:i, d/m/Y, Y-m-d H:i:s, Y-m-d H:i, Y-m-d.
+ */
+function formatarDataBr($data) {
+    if (empty($data)) return null;
+    $data = trim((string)$data);
+
+    $formatos = [
+        'd/m/Y H:i:s',
+        'd/m/Y H:i',
+        'd/m/Y',
+        'Y-m-d H:i:s',
+        'Y-m-d H:i',
+        'Y-m-d',
+    ];
+
+    foreach ($formatos as $fmt) {
+        $dt = DateTime::createFromFormat($fmt, $data);
+        if ($dt !== false) {
+            $errors = DateTime::getLastErrors();
+            if ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0)) {
+                return $dt->format('d/m/Y');
+            }
+        }
+    }
+
+    $ts = strtotime($data);
+    return $ts !== false ? date('d/m/Y', $ts) : null;
+}
+
+
+
+
 function removeNumeros($texto) {
     if (empty($texto)) return '';
     $texto = str_replace("-", "", $texto);
@@ -144,6 +178,30 @@ try {
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 
     <style>
+.img-wrapper-vendido {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 0.5rem;
+}
+
+.badge-vendido-foto {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: var(--success);
+    color: #fff;
+    border: 2px solid var(--shadow-color);
+    box-shadow: 2px 2px 0px 0px var(--shadow-color);
+    border-radius: 8px;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    z-index: 2;
+    pointer-events: none;
+}
+        
         /* ... (Mantenha o CSS original que você já tem) ... */
         :root {
             --primary: <?php echo $theme['primary']; ?>;
@@ -276,6 +334,10 @@ try {
                                 <?php else: ?>
                                     <?php foreach ($empreendimentos as $empreend): ?>
                                         <?php
+                                        
+                                        $dataAtu    = $empreend['DataAtualizacao'] ?? $empreend['DataCadastro'] ?? null;
+                                        $dataAtuFmt = formatarDataBr($dataAtu);
+
                                         $dataEntrega = '';
                                         if (!empty($empreend['MesEntrega']) && !empty($empreend['AnoEntrega'])) {
                                             $dataEntrega = str_pad($empreend['MesEntrega'], 2, '0', STR_PAD_LEFT) . "/" . $empreend['AnoEntrega'];
@@ -294,22 +356,38 @@ try {
                                         $coords = getCoordinates($empreend['Localizacao'] ?? '');
                                         ?>
                                         <tr>
-                                            <td>
+<td>
                                                 <?php 
                                                 $imagem_path     = "card/" . $empreend['Empreend_ID'] . ".jpg";
                                                 $imagem_generica = "card/sem-imagem.jpg"; 
                                                 $imagem_final    = file_exists($imagem_path) ? $imagem_path : $imagem_generica;
+
+                                                $vendido = !empty($empreend['Vendido']) && (
+                                                    $empreend['Vendido'] === true ||
+                                                    $empreend['Vendido'] == 1 ||
+                                                    $empreend['Vendido'] == -1 ||
+                                                    strtolower((string)$empreend['Vendido']) === 'true'
+                                                );
+
+                                                $comissao = (float)($empreend['ComissaoVenda'] ?? 0) / 1;
                                                 ?>
-                                                <img src="<?= htmlspecialchars($imagem_final) ?>" 
-                                                     class="img-fluid rounded mb-2" 
-                                                     style="max-height: 200px; width: auto; cursor: pointer; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color); object-fit: cover;"
-                                                     onclick="openImageModal(this)"
-                                                     onerror="this.onerror=null; this.src='<?= htmlspecialchars($imagem_generica) ?>';"
-                                                     alt="<?= htmlspecialchars($empreend['NomeEmpreendimento']) ?>">
+                                                <div class="img-wrapper-vendido">
+                                                    <?php if ($vendido): ?>
+                                                        <span class="badge-vendido-foto">
+                                                            <i class="fas fa-check-circle"></i> Vendido
+                                                        </span>
+                                                    <?php endif; ?>
+                                                    <img src="<?= htmlspecialchars($imagem_final) ?>" 
+                                                         class="img-fluid rounded" 
+                                                         style="max-height: 200px; width: auto; cursor: pointer; border: 2px solid var(--shadow-color); box-shadow: 3px 3px 0px 0px var(--shadow-color); object-fit: cover;"
+                                                         onclick="openImageModal(this)"
+                                                         onerror="this.onerror=null; this.src='<?= htmlspecialchars($imagem_generica) ?>';"
+                                                         alt="<?= htmlspecialchars($empreend['NomeEmpreendimento'] ?? '') ?>">
+                                                </div>
                                                 
                                                 <div class='mt-2'>
-                                                    <h5><?= htmlspecialchars(strtoupper(removeNumeros($empreend['NomeEmpreendimento']))) ?></h5>
-                                                    <small class="text-muted"><?= htmlspecialchars(removeNumeros($empreend['NomeEmpresa'])) ?></small><br>
+                                                    <h5><?= htmlspecialchars(strtoupper(removeNumeros($empreend['NomeEmpreendimento'] ?? ''))) ?></h5>
+                                                    <small class="text-muted"><?= htmlspecialchars(removeNumeros($empreend['NomeEmpresa'] ?? '')) ?></small><br>
                                                     
                                                     <?php if ($menorPreco): ?>
                                                     <div class="mt-2">
@@ -318,7 +396,7 @@ try {
                                                     </div>
                                                     <?php endif; ?>
                                                     
-                                                    <?php if ($maiorPreco && $maiorPreco > $menorPreco): ?>
+                                                    <?php if ($maiorPreco && (float)$empreend['MaiorPreco'] > (float)($empreend['MenorPreco'] ?? 0)): ?>
                                                     <div>
                                                         <i class='fas fa-tags text-info'></i> 
                                                         <span>Até R$ <?= $maiorPreco ?></span>
@@ -329,7 +407,7 @@ try {
                                                     <span class="badge badge-neo badge-primary-neo mt-1">BEIRA MAR</span>
                                                     <?php endif; ?>
                                                     
-                                                    <span class="badge badge-neo badge-success-neo mt-1">Comissão: <?= $empreend['ComissaoVenda']/1 ?>%</span>
+                                                    <span class="badge badge-neo badge-success-neo mt-1">Comissão: <?= $comissao ?>%</span>
                                                 </div>
                                             </td>
                                             <td>
@@ -346,6 +424,12 @@ try {
                                                 <div class="mb-3">
                                                     <i class="fas fa-calendar-alt text-info"></i> 
                                                     <strong>Entrega: <?= $dataEntrega ?></strong>
+                                                    
+                                                    <?php if ($dataAtuFmt): ?>
+                                                        <br>
+                                                        <i class="fas fa-sync-alt text-secondary"></i> 
+                                                        <small class="text-muted">Atualizado: <?= htmlspecialchars($dataAtuFmt) ?></small>
+                                                    <?php endif; ?>
                                                 </div>
                                                 
                                                 <div class="btn-group-mobile">

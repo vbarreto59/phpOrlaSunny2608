@@ -8,13 +8,20 @@
  * @return bool Retorna true se o arquivo de manutenção existir
  */
 function EstaEmManutencao($sistema_id = null) {
-    if ($sistema_id) {
-        $arquivoManutencao = $_SERVER['DOCUMENT_ROOT'] . "/manut/manut_{$sistema_id}.txt";
-    } else {
-        $arquivoManutencao = dirname(__FILE__) . "/manut.txt";
+    $arquivoGeral = __DIR__ . '/manut.txt';
+
+    if (file_exists($arquivoGeral)) {
+        return true;
     }
-    
-    return file_exists($arquivoManutencao);
+
+    if (!empty($sistema_id)) {
+        $arquivoSistema = __DIR__ . "/manut/manut_{$sistema_id}.txt";
+        if (file_exists($arquivoSistema)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**

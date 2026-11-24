@@ -10,6 +10,41 @@ require_once 'conn.php';
 require_once 'usr_acoes.php';
 require_once 'theme_config.php';
 
+
+// Corrigir data
+/**
+ * Converte uma data em vários formatos possíveis para "d/m/Y".
+ * Suporta: d/m/Y H:i:s, d/m/Y H:i, d/m/Y, Y-m-d H:i:s, Y-m-d H:i, Y-m-d.
+ */
+function formatarDataBr($data) {
+    if (empty($data)) return null;
+    $data = trim((string)$data);
+
+    $formatos = [
+        'd/m/Y H:i:s',
+        'd/m/Y H:i',
+        'd/m/Y',
+        'Y-m-d H:i:s',
+        'Y-m-d H:i',
+        'Y-m-d',
+    ];
+
+    foreach ($formatos as $fmt) {
+        $dt = DateTime::createFromFormat($fmt, $data);
+        if ($dt !== false) {
+            $errors = DateTime::getLastErrors();
+            // PHP >= 8.2 retorna false quando não há erros
+            if ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0)) {
+                return $dt->format('d/m/Y');
+            }
+        }
+    }
+
+    // Fallback: tenta strtotime (útil se algum dia virar DATETIME do MySQL)
+    $ts = strtotime($data);
+    return $ts !== false ? date('d/m/Y', $ts) : null;
+}
+
 // ============================================================
 // LOGIN
 // ============================================================
@@ -110,6 +145,30 @@ $totalEmpreend = count($empreendimentos);
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <style>
+
+.img-wrap {
+    position: relative;
+    overflow: hidden;
+}
+
+.badge-vendido-foto {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: #198754;
+    color: #fff;
+    padding: 0.22rem 0.55rem;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    z-index: 2;
+    pointer-events: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+
         :root {
             --primary: <?= $themeSafe['primary'] ?>;
             --primary-dark: <?= $themeSafe['primary_dark'] ?>;
@@ -622,22 +681,42 @@ $totalEmpreend = count($empreendimentos);
 </head>
 <body>
 
+<?php
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+$modoGet      = strtolower(trim($_GET['modo'] ?? $_GET['target'] ?? ''));
+$sessionTarget = strtolower(trim((string)($_SESSION['link_target'] ?? '')));
+$abrirSessao  = !empty($_SESSION['abrir_nova_aba']) || ($sessionTarget === '_blank');
+
+$isBlankModo = in_array($modoGet, ['blank', '_blank', 'popup', 'nova'], true)
+    || ($modoGet !== 'self' && $abrirSessao);
+
+$logoSrc  = !empty($logoHeader) ? $logoHeader : 'img/logosunny.jpg';
+$totalReg = (int)($totalEmpreend ?? 0);
+?>
 <!-- HEADER -->
 <header class="app-header">
     <div class="header-inner">
         <div class="header-brand">
-            <img src="<?= htmlspecialchars($logoHeader) ?>"
+            <img src="<?= htmlspecialchars($logoSrc, ENT_QUOTES) ?>"
                  alt="Logo"
                  class="header-logo"
                  onerror="this.onerror=null;this.src='img/logosunny.jpg';">
             <div class="header-title">
                 <h1><i class="fas fa-building me-2"></i> Empreendimentos</h1>
-                <p><?= $totalEmpreend ?> registros · SunnyImob</p>
+                <p><?= $totalReg ?> registros · SunnyImob</p>
             </div>
         </div>
         <div class="header-actions">
-            <a href="#" onclick="fecharJanela(event); return false;" class="btn-header danger">
-                <i class="fas fa-times"></i> Fechar
+            <a href="#"
+               id="btnAcaoJanela"
+               data-modo="<?= htmlspecialchars($modoGet, ENT_QUOTES) ?>"
+               data-nova-aba="<?= $isBlankModo ? '1' : '0' ?>"
+               class="btn-header <?= $isBlankModo ? 'danger' : '' ?>">
+                <i class="fas <?= $isBlankModo ? 'fa-times' : 'fa-arrow-left' ?>"></i>
+                <span><?= $isBlankModo ? 'Fechar' : 'Voltar' ?></span>
             </a>
         </div>
     </div>
@@ -696,8 +775,8 @@ $totalEmpreend = count($empreendimentos);
                 $temComissao = ($comissao !== null && $comissao !== '' && (float)$comissao > 0);
 
                 // Data de atualização (bug #11)
-                $dataAtu = $empreendimento['DataAtualizacao'] ?? $empreendimento['DataCadastro'] ?? null;
-                $dataAtuFmt = $dataAtu ? date('d/m/Y', strtotime($dataAtu)) : null;
+                $dataAtu    = $empreendimento['DataAtualizacao'] ?? $empreendimento['DataCadastro'] ?? null;
+                $dataAtuFmt = formatarDataBr($dataAtu);
 
                 // MesEntrega/AnoEntrega
                 $mesEntrega = trim((string)($empreendimento['MesEntrega'] ?? ''));
@@ -723,12 +802,18 @@ $totalEmpreend = count($empreendimentos);
                                 <div class="col-md-2">
                                     <?php if ($hasImg): ?>
                                         <div class="img-wrap" onclick="openImageModal('<?= htmlspecialchars($imgUrl) ?>', '<?= htmlspecialchars($empreendimento['NomeEmpreendimento'] ?? '') ?>')">
+                                            <?php if ($vendido): ?>
+                                                <span class="badge-vendido-foto"><i class="fas fa-check"></i> Vendido</span>
+                                            <?php endif; ?>
                                             <img src="<?= htmlspecialchars($imgUrl) ?>"
                                                  alt="<?= htmlspecialchars($empreendimento['NomeEmpreendimento'] ?? '') ?>"
                                                  onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\'placeholder\'><i class=\'fas fa-image\'></i></div>';">
                                         </div>
                                     <?php else: ?>
                                         <div class="img-wrap">
+                                            <?php if ($vendido): ?>
+                                                <span class="badge-vendido-foto"><i class="fas fa-check"></i> Vendido</span>
+                                            <?php endif; ?>
                                             <div class="placeholder"><i class="fas fa-building"></i></div>
                                         </div>
                                     <?php endif; ?>
@@ -957,7 +1042,6 @@ $totalEmpreend = count($empreendimentos);
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/2.1.8/js/dataTables.bootstrap5.min.js"></script>
-
 <script>
 (function () {
     'use strict';
@@ -1052,24 +1136,95 @@ $totalEmpreend = count($empreendimentos);
     });
 
     // ============================================================
-    // FECHAR JANELA (bug #13)
+    // FECHAR JANELA
     // ============================================================
     window.fecharJanela = function (event) {
         if (event) event.preventDefault();
-        Swal.fire({
-            title: 'Fechar janela?',
-            text: 'Deseja realmente fechar esta janela?',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Sim, fechar',
-            cancelButtonText: 'Cancelar',
-            confirmButtonColor: '<?= $themeSafe['primary'] ?>',
-            cancelButtonColor: '#6b7280'
-        }).then(r => {
-            if (r.isConfirmed) window.close();
-        });
+        window.close();
     };
 
+})();
+</script>
+
+
+<script>
+(function () {
+    const FALLBACK_VOLTAR = 'mainpage_v66a.php';
+
+    function obterBotao() {
+        return document.getElementById('btnAcaoJanela');
+    }
+
+    function isModoBlank(btn) {
+        if (!btn) return false;
+
+        const modo = (btn.dataset.modo || '').trim().toLowerCase();
+        if (modo === 'self') return false;
+        if (['blank', '_blank', 'popup', 'nova'].includes(modo)) return true;
+        if (btn.dataset.novaAba === '1') return true;
+
+        return Boolean(window.opener && !window.opener.closed);
+    }
+
+    function aplicarVisual(btn) {
+        if (!btn) return;
+
+        const blank = isModoBlank(btn);
+        const icon  = btn.querySelector('i');
+        const span  = btn.querySelector('span');
+
+        btn.classList.toggle('danger', blank);
+        if (icon) {
+            icon.className = blank ? 'fas fa-times' : 'fas fa-arrow-left';
+        }
+        if (span) {
+            span.textContent = blank ? 'Fechar' : 'Voltar';
+        }
+    }
+
+    function tratarClique(event) {
+        if (event) event.preventDefault();
+
+        const btn = obterBotao();
+        if (isModoBlank(btn)) {
+            if (typeof fecharJanela === 'function') {
+                fecharJanela(event);
+                return;
+            }
+            window.close();
+            setTimeout(function () {
+                if (!window.closed) {
+                    window.location.href = FALLBACK_VOLTAR;
+                }
+            }, 150);
+            return;
+        }
+
+        const mesmoDominio =
+            window.history.length > 1 &&
+            document.referrer &&
+            document.referrer.indexOf(window.location.origin) === 0;
+
+        if (mesmoDominio) {
+            window.history.back();
+        } else {
+            window.location.href = FALLBACK_VOLTAR;
+        }
+    }
+
+    function init() {
+        const btn = obterBotao();
+        if (!btn) return;
+        aplicarVisual(btn);
+        btn.removeEventListener('click', tratarClique);
+        btn.addEventListener('click', tratarClique);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 })();
 </script>
 </body>

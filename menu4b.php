@@ -15,6 +15,17 @@ if (!empty($_SESSION['IdEmp'])) {
 $nomeEmpresa = $_SESSION['EmpresaNome'] ?? 'SunnyImob';
 $logoEmpresa = !empty($_SESSION['Conf_ImgLogo']) ? $_SESSION['Conf_ImgLogo'] : 'logoSunny66a.JPG';
 
+// ==================== RECURSO DE ABERTURA DE ABA (_blank / _self) ====================
+$linkTarget   = $_SESSION['link_target'] ?? '_self';
+$abrirNovaAba = !empty($_SESSION['abrir_nova_aba']) || ($linkTarget === '_blank');
+$targetAttr   = $abrirNovaAba ? '_blank' : '_self';
+$modoParam    = $abrirNovaAba ? 'blank' : 'self';
+
+function urlComModo(string $url, string $modo): string {
+    $separador = (strpos($url, '?') !== false) ? '&' : '?';
+    return $url . $separador . 'modo=' . urlencode($modo);
+}
+
 header('Content-Type: text/html; charset=utf-8');
 
 if (empty($_SESSION['Usuario'])) {
@@ -28,6 +39,75 @@ if (!UsuarioPodeEditar()) {
 }
 
 $usuarioLogado = $_SESSION['Usuario'];
+
+$itensMenu = [
+    [
+        'href'  => 'gestao_empresa_list2.php',
+        'icone' => 'fas fa-building',
+        'titulo'=> 'Empresas',
+        'desc'  => 'Rede e Unidades',
+    ],
+    [
+        'href'  => 'gestao_empreend_list_card.php',
+        'icone' => 'fas fa-city',
+        'titulo'=> 'Empreendimentos',
+        'desc'  => 'Lista de Produtos',
+    ],
+    [
+        'href'  => 'empreend_v3_imagem_paste.php',
+        'icone' => 'fas fa-images',
+        'titulo'=> 'Imagens',
+        'desc'  => 'Cards dos Empreendimentos',
+    ],
+    [
+        'href'  => 'empreend_update_nomeempreendimento.php',
+        'icone' => 'fas fa-pen-square',
+        'titulo'=> 'Nomes',
+        'desc'  => 'Títulos Comerciais',
+    ],
+    [
+        'href'  => 'empreend_update_tipologia.php',
+        'icone' => 'fas fa-layer-group',
+        'titulo'=> 'Tipologias',
+        'desc'  => 'Plantas e Unidades',
+    ],
+    [
+        'href'  => 'empreend_update_pavimentos.php',
+        'icone' => 'fas fa-layer-group',
+        'titulo'=> 'Pavimentos',
+        'desc'  => 'QTD de Pavimentos',
+    ],
+    [
+        'href'  => 'empreend_update_localizacao.php',
+        'icone' => 'fas fa-map-marked-alt',
+        'titulo'=> 'Localização',
+        'desc'  => 'Endereços e Mapas',
+    ],
+    [
+        'href'  => 'empreend_update_distancia_mar.php',
+        'icone' => 'fas fa-map-marked-alt',
+        'titulo'=> 'Distância Mar',
+        'desc'  => 'Distância até o mar',
+    ],
+    [
+        'href'  => 'empreend_update_comissao.php',
+        'icone' => 'fas fa-hand-holding-usd',
+        'titulo'=> 'Comissões',
+        'desc'  => 'Regras e Valores',
+    ],
+    [
+        'href'  => 'empreend_verificacao2.php',
+        'icone' => 'fas fa-clipboard-check',
+        'titulo'=> 'Auditoria',
+        'desc'  => 'Dados Incompletos',
+    ],
+    [
+        'href'  => 'usr_usuarios_ativos_sunny.php',
+        'icone' => 'fas fa-user-shield',
+        'titulo'=> 'Usuários',
+        'desc'  => 'Equipe e Acessos',
+    ],
+];
 ?>
 
 <!DOCTYPE html>
@@ -36,7 +116,7 @@ $usuarioLogado = $_SESSION['Usuario'];
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="refresh" content="900"> 
-    <title>Menu Principal - <?= $nomeEmpresa ?></title>
+    <title>Menu Principal - <?= htmlspecialchars($nomeEmpresa, ENT_QUOTES) ?></title>
     
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
@@ -241,110 +321,41 @@ $usuarioLogado = $_SESSION['Usuario'];
 </head>
 <body>
 
-<div class="main-container">
-    <header>
-        <div class="user-tag">
-            <i class="fas fa-user-circle mr-1"></i>
-            <?= htmlspecialchars(strtoupper($usuarioLogado)) ?> 
-            <a href="logout.php" onclick="return confirm('Sair?')"><i class="fas fa-sign-out-alt"></i></a>
-        </div>
+<!-- ============================================================ -->
+<!-- HEADER                                                       -->
+<!-- ============================================================ -->
+<?php
+$pageTitle    = 'Menu Atualizador';           // OBRIGATÓRIO
+$pageSubtitle = 'SunnyImob';  // opcional
+$pageIcon     = 'fa-city';                   // opcional (default: fa-building)
+include 'header.php';
+?>
 
-        <div class="logo-box">
-            <img src="<?= $logoEmpresa ?>" alt="Logo">
-        </div>
-        
-        <h2><?= $nomeEmpresa ?></h2>
-        <h4>Gestão de Empreendimentos Imobiliários</h4>
-    </header>
+
+<div class="main-container">
+
 
     <div class="p-4">
-        <span class="group-title">Painel Administrativo</span>
+        <span class="group-title">Menu Atualizador</span>
         
         <div class="row">
-            <div class="col-6 col-md-4 mb-4">
-                <a href="gestao_empresa_list2.php" class="menu-card" target="_blank">
-                    <i class="fas fa-building"></i>
-                    <h3>Empresas</h3>
-                    <p>Rede e Unidades</p>
-                </a>
-            </div>
-
-            <div class="col-6 col-md-4 mb-4">
-                <a href="gestao_empreend_list_card.php" class="menu-card" target="_blank">
-                    <i class="fas fa-city"></i>
-                    <h3>Empreendimentos</h3>
-                    <p>Lista de Produtos</p>
-                </a>
-            </div>
-
-            <div class="col-6 col-md-4 mb-4">
-                <a href="empreend_v3_imagem_paste.php" class="menu-card" target="_blank">
-                    <i class="fas fa-images"></i>
-                    <h3>Imagens</h3>
-                    <p>Cards dos Empreendimentos</p>
-                </a>
-            </div>
-
-            <div class="col-6 col-md-4 mb-4">
-                <a href="empreend_update_nomeempreendimento.php" class="menu-card" target="_blank">
-                    <i class="fas fa-pen-square"></i>
-                    <h3>Nomes</h3>
-                    <p>Títulos Comerciais</p>
-                </a>
-            </div>
-
-            <div class="col-6 col-md-4 mb-4">
-                <a href="empreend_update_tipologia.php" class="menu-card" target="_blank">
-                    <i class="fas fa-layer-group"></i>
-                    <h3>Tipologias</h3>
-                    <p>Plantas e Unidades</p>
-                </a>
-            </div>
-
-            <div class="col-6 col-md-4 mb-4">
-                <a href="empreend_update_pavimentos.php" class="menu-card" target="_blank">
-                    <i class="fas fa-layer-group"></i>
-                    <h3>Pavimentos</h3>
-                    <p>QTD de Pavimentos</p>
-                </a>
-            </div>
-
-            <div class="col-6 col-md-4 mb-4">
-                <a href="empreend_update_localizacao.php" class="menu-card" target="_blank">
-                    <i class="fas fa-map-marked-alt"></i>
-                    <h3>Localização</h3>
-                    <p>Endereços e Mapas</p>
-                </a>
-            </div>
-
-            <div class="col-6 col-md-4 mb-4">
-                <a href="empreend_update_comissao.php" class="menu-card" target="_blank">
-                    <i class="fas fa-hand-holding-usd"></i>
-                    <h3>Comissões</h3>
-                    <p>Regras e Valores</p>
-                </a>
-            </div>
-
-            <div class="col-6 col-md-4 mb-4">
-                <a href="empreend_verificacao2.php" class="menu-card" target="_blank">
-                    <i class="fas fa-clipboard-check"></i>
-                    <h3>Auditoria</h3>
-                    <p>Dados Incompletos</p>
-                </a>
-            </div>
-
-            <div class="col-6 col-md-4 mb-4">
-                <a href="usr_usuarios_ativos_sunny.php" class="menu-card" target="_blank">
-                    <i class="fas fa-user-shield"></i>
-                    <h3>Usuários</h3>
-                    <p>Equipe e Acessos</p>
-                </a>
-            </div>
+            <?php foreach ($itensMenu as $item): ?>
+                <div class="col-6 col-md-4 mb-4">
+                    <a href="<?= htmlspecialchars(urlComModo($item['href'], $modoParam), ENT_QUOTES) ?>"
+                       class="menu-card"
+                       target="<?= htmlspecialchars($targetAttr, ENT_QUOTES) ?>"
+                       <?= $abrirNovaAba ? 'rel="noopener"' : '' ?>>
+                        <i class="<?= htmlspecialchars($item['icone'], ENT_QUOTES) ?>"></i>
+                        <h3><?= htmlspecialchars($item['titulo'], ENT_QUOTES) ?></h3>
+                        <p><?= htmlspecialchars($item['desc'], ENT_QUOTES) ?></p>
+                    </a>
+                </div>
+            <?php endforeach; ?>
         </div>
     </div>
 
     <footer>
-        <?= $nomeEmpresa ?> &copy; <?= date('Y') ?> | Sistema SunnyImob
+        <?= htmlspecialchars($nomeEmpresa, ENT_QUOTES) ?> &copy; <?= date('Y') ?> | Sistema SunnyImob
     </footer>
 </div>
 

@@ -1,10 +1,20 @@
 <?php
+// sistema: sunny
 // manutmenu.php
 
 // Iniciar sessão
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+
+
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+ini_set('log_errors', '1');
+ini_set('error_log', __DIR__ . '/erro_500_manutmenu.log');
+error_reporting(E_ALL);
+
+
 
 // Definir codificação
 header('Content-Type: text/html; charset=UTF-8');

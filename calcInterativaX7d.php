@@ -892,108 +892,183 @@ if ($_SERVER['REMOTE_ADDR'] !== '127.0.0.1' && $_SERVER['REMOTE_ADDR'] !== '::1'
             L.push(s2);
             L.push('');
 
-            // ============ 1. DADOS DO IMOVEL ============
-            L.push('>> DADOS DO IMOVEL');
+//########
+// ============ 1. DADOS DO IMOVEL ============
+            L.push('DADOS DO IMOVEL');
             L.push(s1);
-            if (infoBase.empreendimento) L.push(padLabel('Empreendimento')    + infoBase.empreendimento);
-            if (infoBase.unidade)        L.push(padLabel('Unidade')            + infoBase.unidade);
-            if (m2 > 0)                  L.push(padLabel('Area total')         + m2.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m2');
-            L.push(padLabel('Valor do imovel')  + 'R$ ' + toMoeda(valorUnidade));
-            if (valorM2 > 0)             L.push(padLabel('Valor por m2')       + 'R$ ' + toMoeda(valorM2) + '/m2');
-            if (infoBase.cliente)        L.push(padLabel('Cliente')            + infoBase.cliente);
-            if (infoBase.corretor)       L.push(padLabel('Corretor')           + infoBase.corretor);
-            if (infoBase.dataFormatada)  L.push(padLabel('Data')               + infoBase.dataFormatada);
-            L.push('');
+            if (infoBase.empreendimento) L.push('Empreendimento: ' + infoBase.empreendimento);
+            if (infoBase.unidade)        L.push('Unidade: ' + infoBase.unidade);
+            if (m2 > 0)                  L.push('Area total: ' + m2.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m2');
+            L.push('Valor do imovel: R$ ' + toMoeda(valorUnidade));
+            if (infoBase.cliente)        L.push('Cliente: ' + infoBase.cliente);
+            if (infoBase.corretor)       L.push('Corretor: ' + infoBase.corretor);
+           // if (infoBase.dataFormatada)  L.push('Data: ' + infoBase.dataFormatada);
+            
 
-            // ============ 2. RESUMO DO PLANO ============
-            L.push('>> RESUMO DO PLANO');
-            L.push(s1);
-            L.push(padLabel('Etapas preenchidas') + etapasPreenchidas.length + ' de 11');
-            L.push(padLabel('Total de parcelas')  + totalParcelas + ' parcela(s)');
-            L.push(padLabel('Entrada inicial')    + 'R$ ' + toMoeda(totalEntrada) + '  (' + toPercentual(pctEntrada) + ')');
-            L.push(padLabel('Total a pagar')      + 'R$ ' + toMoeda(totalPago)    + '  (' + toPercentual(percentualTotal) + ')');
-            L.push(padLabel('Saldo devedor')      + 'R$ ' + toMoeda(saldoDevedor) + '  (' + toPercentual(saldoPercentual) + ')');
-            L.push('');
+            // ============ 2. CONDICOES PREENCHIDAS (11 ETAPAS) ============
+            const normalizar = (txt) => String(txt || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]/g, '');
 
-            // ============ 3. DESTAQUES ============
-            const destaques = [];
-            if (totalEntrada > 0) {
-                destaques.push('Entrada inicial (Sinal + Ato) : R$ ' + toMoeda(totalEntrada) + ' (' + toPercentual(pctEntrada) + ')');
-            }
-            if (qtdMensais > 0) {
-                destaques.push('Parcelas mensais              : ' + qtdMensais + 'x de R$ ' + toMoeda(parcelaMensalUnitaria) + ' = R$ ' + toMoeda(parcelaMensalUnitaria * qtdMensais));
-            }
-            if (totalChaves > 0) {
-                destaques.push('Parcela de chaves             : R$ ' + toMoeda(totalChaves) + ' (' + toPercentual((totalChaves / valorUnidade) * 100) + ')');
-            }
-            if (saldoDevedor > 0) {
-                destaques.push('Saldo devedor                 : R$ ' + toMoeda(saldoDevedor) + ' (' + toPercentual(saldoPercentual) + ')');
-            }
+            const parseNumero = (val) => {
+                if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+                if (typeof val === 'string') {
+                    const limpo = val.trim().replace(/[^\d.,-]/g, '');
+                    if (!limpo) return 0;
+                    // Se tiver vírgula, assume padrão pt-BR (1.234,56 -> 1234.56)
+                    if (limpo.includes(',')) {
+                        const n = parseFloat(limpo.replace(/\./g, '').replace(',', '.'));
+                        return Number.isFinite(n) ? n : 0;
+                    }
+                    const n = parseFloat(limpo);
+                    return Number.isFinite(n) ? n : 0;
+                }
+                return 0;
+            };
 
-            if (destaques.length > 0) {
-                L.push('>> DESTAQUES');
-                L.push(s1);
-                destaques.forEach(d => L.push('  ' + d));
-                L.push('');
-            }
+            const listaEtapas = Array.isArray(etapasPreenchidas) ? etapasPreenchidas : [];
 
-            // ============ 4. DETALHAMENTO POR GRUPO ============
-            L.push('>> DETALHAMENTO POR ETAPA');
-            L.push(s1);
-
-            if (etapasPreenchidas.length === 0) {
-                L.push('');
-                L.push('  [!] Nenhuma parcela registrada nesta simulacao.');
-                L.push('');
-            } else {
-                let numero = 0;
-                GRUPOS_ETAPAS.forEach(grupo => {
-                    const doGrupo = etapasPreenchidas.filter(e => grupo.etapas.includes(e.key));
-                    if (doGrupo.length === 0) return;
-
-                    L.push('');
-                    L.push('  ' + grupo.titulo);
-                    L.push('  ' + s3);
-
-                    let subtotal = 0;
-                    doGrupo.forEach(e => {
-                        numero++;
-                        subtotal += e.total;
-                        const numStr = String(numero).padStart(2, '0');
-                        L.push('  ' + numStr + '. ' + e.nome);
-                        if (e.qtd > 1) {
-                            L.push('      ' + e.qtd + 'x de R$ ' + toMoeda(e.valor) + '  =  R$ ' + toMoeda(e.total) + '  (' + toPercentual(e.pct) + ')');
-                        } else {
-                            L.push('      1x R$ ' + toMoeda(e.valor) + '  (' + toPercentual(e.pct) + ')');
-                        }
-                    });
-
-                    const pctGrupo = (subtotal / valorUnidade) * 100;
-                    L.push('  -- Subtotal ' + grupo.titulo.toLowerCase() + ': R$ ' + toMoeda(subtotal) + ' (' + toPercentual(pctGrupo) + ')');
+            const buscarEtapa = (chaves) => {
+                const alvos = (Array.isArray(chaves) ? chaves : [chaves]).map(normalizar);
+                return listaEtapas.find(e => {
+                    if (!e || typeof e !== 'object') return false;
+                    const candidatos = [e.key, e.id, e.slug, e.etapa, e.codigo, e.nome, e.label, e.titulo]
+                        .map(normalizar)
+                        .filter(Boolean);
+                    return candidatos.some(c => alvos.includes(c));
                 });
-            }
-            L.push('');
+            };
 
-            // ============ 5. RESUMO FINANCEIRO FINAL ============
-            L.push(s2);
-            L.push('  RESUMO FINANCEIRO');
-            L.push(s2);
-            L.push(padLabel('Valor total do imovel') + 'R$ ' + toMoeda(valorUnidade) + '  (100,00%)');
-            L.push(padLabel('Total pago')            + 'R$ ' + toMoeda(totalPago)    + '  (' + toPercentual(percentualTotal) + ')');
-            L.push(padLabel('Saldo devedor')         + 'R$ ' + toMoeda(saldoDevedor) + '  (' + toPercentual(saldoPercentual) + ')');
-            L.push(s2);
-            L.push('');
-            L.push('SunnyImob - Sistema de Gestao Imobiliaria');
-            L.push('Documento gerado em ' + timestamp);
+            const extrairQtd = (etapa, fallback) => {
+                const raw = etapa
+                    ? (etapa.qtd ?? etapa.quantidade ?? etapa.parcelas ?? etapa.qtde ?? etapa.vezes)
+                    : undefined;
+                const n = parseNumero(raw);
+                if (n > 0) return n;
+                const fb = parseNumero(fallback);
+                return fb > 0 ? fb : 1;
+            };
 
+            const extrairUnit = (etapa, fallback) => {
+                const raw = etapa
+                    ? (etapa.valor ?? etapa.valorUnitario ?? etapa.valor_unitario ?? etapa.unitario ?? etapa.vlr)
+                    : undefined;
+                const n = parseNumero(raw);
+                if (n !== 0) return n;
+                return parseNumero(fallback);
+            };
+
+            const extrairTotal = (etapa, qtd, unit, fallback) => {
+                const raw = etapa
+                    ? (etapa.total ?? etapa.valorTotal ?? etapa.valor_total ?? etapa.subtotal ?? etapa.montante)
+                    : undefined;
+                const n = parseNumero(raw);
+                if (n !== 0) return n;
+                const calc = qtd * unit;
+                if (calc !== 0) return calc;
+                return parseNumero(fallback);
+            };
+
+            let acumPct = 0;
+            const addLinhaEtapa = (label, qtd, valorUnit, totalEtapa) => {
+                const valNum = parseNumero(totalEtapa);
+                if (valNum === 0) return;
+
+                const qtdNum = parseNumero(qtd) || 1;
+                const unitNum = parseNumero(valorUnit) || (valNum / qtdNum);
+                const textoValores = qtdNum > 1
+                    ? `${qtdNum}x de R$ ${toMoeda(unitNum)} = R$ ${toMoeda(valNum)}`
+                    : `1x de R$ ${toMoeda(valNum)}`;
+
+                const pctEtapa = valorUnidade !== 0 ? (valNum / valorUnidade) * 100 : 0;
+                acumPct += pctEtapa;
+
+                L.push(
+                    label + ': ' +
+                    textoValores +
+                    ' (' + toPercentual(pctEtapa) + ')' +
+                    ' | Acum.: ' + toPercentual(acumPct)
+                );
+            };
+            L.push('');
+            L.push('FLUXO DE PAGAMENTOS');
+            L.push(s1);
+            const etapasConfig = [
+                {
+                    label: 'Pix Reserva',
+                    chaves: ['pix_reserva', 'pixreserva', 'pix', 'reserva', 'sinal_pix']
+                },
+                {
+                    label: 'Ato/Contrato',
+                    chaves: ['ato_contrato', 'atocontrato', 'ato', 'contrato', 'sinal', 'entrada']
+                },
+                {
+                    label: '30 dias',
+                    chaves: ['30_dias', '30dias', 'trinta_dias', 'd30']
+                },
+                {
+                    label: '60 dias',
+                    chaves: ['60_dias', '60dias', 'sessenta_dias', 'd60']
+                },
+                {
+                    label: '90 Dias',
+                    chaves: ['90_dias', '90dias', 'noventa_dias', 'd90']
+                },
+                {
+                    label: '120 Dias',
+                    chaves: ['120_dias', '120dias', 'cento_e_vinte_dias', 'd120']
+                },
+                {
+                    label: '150 Dias',
+                    chaves: ['150_dias', '150dias', 'cento_e_cinquenta_dias', 'd150']
+                },
+                {
+                    label: '180 Dias',
+                    chaves: ['180_dias', '180dias', 'cento_e_oitenta_dias', 'd180']
+                },
+                {
+                    label: 'Parcelas Mensais',
+                    chaves: ['parcelas_mensais', 'parcelasmensais', 'mensais', 'mensal'],
+                    fallbackQtd: typeof qtdMensais !== 'undefined' ? qtdMensais : 0,
+                    fallbackUnit: typeof parcelaMensalUnitaria !== 'undefined' ? parcelaMensalUnitaria : 0
+                },
+                {
+                    label: 'Parcelas Semestrais',
+                    chaves: ['parcelas_semestrais', 'parcelassemestrais', 'semestrais', 'semestral']
+                },
+                {
+                    label: 'Chaves',
+                    chaves: ['chaves', 'parcela_chaves', 'parcelachaves', 'final_chaves'],
+                    fallbackTotal: typeof totalChaves !== 'undefined' ? totalChaves : 0
+                }
+            ];
+
+            etapasConfig.forEach(cfg => {
+                const etapa = buscarEtapa(cfg.chaves);
+                const qtd = extrairQtd(etapa, cfg.fallbackQtd);
+                const unit = extrairUnit(etapa, cfg.fallbackUnit);
+                const total = extrairTotal(etapa, qtd, unit, cfg.fallbackTotal);
+
+                addLinhaEtapa(cfg.label, qtd, unit, total);
+            });
+
+            // ============ 3. VALOR TOTAL ============
+            L.push('');
+            L.push(s2);
+            L.push('Valor total do imovel: R$ ' + toMoeda(valorUnidade) + ' (100,00%)');
+            L.push(s2);
+
+
+
+//##########
             // ---------- Atualizar campos na tela ----------
             document.getElementById('totalPago').value          = 'R$ ' + toMoeda(totalPago);
             document.getElementById('percentualTotal').value    = toPercentual(percentualTotal);
             document.getElementById('saldoDevedor').value       = 'R$ ' + toMoeda(saldoDevedor);
             document.getElementById('saldoPercentual').value    = toPercentual(saldoPercentual);
-            document.getElementById('valorUnidadeResult').value = 'R$ ' + toMoeda(valorUnidade);
-
-            if (detalhesTextarea) {
+            document.getElementById('valorUnidadeResult').value = 'R$ ' + toMoeda(valorUnidade);            if (detalhesTextarea) {
                 detalhesTextarea.value = L.join('\n');
             }
         }
